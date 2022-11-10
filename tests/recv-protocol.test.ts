@@ -93,19 +93,31 @@ Deno.test('readyForQuery', async () => {
 })
 
 Deno.test('parseComplete', async () => {
-  assertEquals(await decode2(buffer('1', [0, 0, 0, 4])), { code: '1' as const })
+  assertEquals(await decode2(buffer('1', [0, 0, 0, 4])), {
+    code: '1' as const,
+    data: null,
+  })
 })
 
 Deno.test('bindComplete', async () => {
-  assertEquals(await decode2(buffer('2', [0, 0, 0, 4])), { code: '2' as const })
+  assertEquals(await decode2(buffer('2', [0, 0, 0, 4])), {
+    code: '2' as const,
+    data: null,
+  })
 })
 
 Deno.test('closeComplete', async () => {
-  assertEquals(await decode2(buffer('3', [0, 0, 0, 4])), { code: '3' as const })
+  assertEquals(await decode2(buffer('3', [0, 0, 0, 4])), {
+    code: '3' as const,
+    data: null,
+  })
 })
 
 Deno.test('noData', async () => {
-  assertEquals(await decode2(buffer('n', [0, 0, 0, 4])), { code: 'n' as const })
+  assertEquals(await decode2(buffer('n', [0, 0, 0, 4])), {
+    code: 'n' as const,
+    data: null,
+  })
 })
 
 Deno.test('rowDescription', async () => {

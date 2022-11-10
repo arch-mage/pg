@@ -43,14 +43,17 @@ export type Row = Record<string, string | null>
 
 export interface ParseComplete {
   code: '1'
+  data: null
 }
 
 export interface BindComplete {
   code: '2'
+  data: null
 }
 
 export interface CloseComplete {
   code: '3'
+  data: null
 }
 
 export interface CommandComplete {
@@ -75,7 +78,7 @@ export interface BackendKeyData {
 
 export interface NoData {
   code: 'n'
-  data?: undefined
+  data: null
 }
 
 export interface Authentication {
@@ -86,6 +89,11 @@ export interface Authentication {
 export interface ParameterStatus {
   code: 'S'
   data: [string, string]
+}
+
+export interface PortalSuspended {
+  code: 's'
+  data: null
 }
 
 export interface RowDescription {
@@ -115,5 +123,6 @@ export type Packet =
   | Authentication
   | ParameterStatus
   | RowDescription
+  | PortalSuspended
   | ParameterDescription
   | ReadyForQuery

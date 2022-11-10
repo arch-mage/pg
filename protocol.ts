@@ -6,7 +6,7 @@ import {
   BufReader,
   BufWriter,
 } from './deps.ts'
-import { ProtocolError } from './error.ts'
+import { ProtocolError, UnrecognizedResponseError } from './error.ts'
 import {
   AuthCode,
   ColumnDescription,
@@ -159,13 +159,13 @@ export class Protocol implements AsyncIterableIterator<Packet> {
     }
     const [code] = raw
     if (code === '1') {
-      return { code: '1' as const }
+      return { code: '1' as const, data: null }
     }
     if (code === '2') {
-      return { code: '2' as const }
+      return { code: '2' as const, data: null }
     }
     if (code === '3') {
-      return { code: '3' as const }
+      return { code: '3' as const, data: null }
     }
     if (code === 'C') {
       return { code: 'C' as const, data: commandComplete(this.#dec) }
@@ -180,13 +180,16 @@ export class Protocol implements AsyncIterableIterator<Packet> {
       return { code: 'K' as const, data: backendKeyData(this.#dec) }
     }
     if (code === 'n') {
-      return { code: 'n' as const }
+      return { code: 'n' as const, data: null }
     }
     if (code === 'R') {
       return { code: 'R' as const, data: authentication(this.#dec) }
     }
     if (code === 'S') {
       return { code: 'S' as const, data: parameterStatus(this.#dec) }
+    }
+    if (code === 's') {
+      return { code: 's' as const, data: null }
     }
     if (code === 'T') {
       return { code: 'T' as const, data: rowDescription(this.#dec) }
@@ -197,7 +200,7 @@ export class Protocol implements AsyncIterableIterator<Packet> {
     if (code === 'Z') {
       return { code: 'Z' as const, data: readyForQuery(this.#dec) }
     }
-    throw new ProtocolError(`unrecognized server response: ${code}`)
+    throw new UnrecognizedResponseError(code)
   }
 
   [Symbol.asyncIterator](): this {
@@ -327,7 +330,6 @@ function readyForQuery(dec: Decoder): ReadyState {
 // NegotiateProtocolVersion (B)
 // NoticeResponse (B)
 // NotificationResponse (B)
-// PortalSuspended (B)
 // CancelRequest (F)
 // CopyFail (F)
 // Flush (F)
