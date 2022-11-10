@@ -1,4 +1,4 @@
-export interface Reader {
+export interface FullReader {
   readFull(buff: Uint8Array): Promise<Uint8Array | null>
 }
 

@@ -1,58 +1,52 @@
-import {
-  assertEquals,
-  assertRejects,
-  assertThrows,
-} from 'https://deno.land/std@0.163.0/testing/asserts.ts'
-import {
-  Buffer,
-  BufReader,
-  PartialReadError,
-} from 'https://deno.land/std@0.163.0/io/mod.ts'
-import { concat } from 'https://deno.land/std@0.163.0/bytes/mod.ts'
-import { decode, expect } from './decoder.ts'
-import { AuthCode, ReadyState } from './types.ts'
+import { assertEquals, assertRejects } from './deps.ts'
+import { Buffer, PartialReadError, concat } from '../deps.ts'
+import { AuthCode, ReadyState } from '../types.ts'
+import { Protocol } from '../protocol.ts'
+import { ProtocolError } from '../error.ts'
 
 function buffer(...source: Array<string | number | number[]>) {
-  return new BufReader(
-    new Buffer(
-      concat(
-        ...source.map((source) =>
-          Array.isArray(source)
-            ? new Uint8Array(source)
-            : typeof source === 'string'
-            ? new TextEncoder().encode(source)
-            : new Uint8Array([source])
-        )
+  return new Buffer(
+    concat(
+      ...source.map((source) =>
+        Array.isArray(source)
+          ? new Uint8Array(source)
+          : typeof source === 'string'
+          ? new TextEncoder().encode(source)
+          : new Uint8Array([source])
       )
     )
   )
 }
 
+function decode2(buff: Buffer) {
+  return new Protocol(buff, buff).recv()
+}
+
 Deno.test('insufficient data', async () => {
-  assertEquals(await decode(buffer()), null)
+  assertEquals(await decode2(buffer()), null)
   await assertRejects(
-    () => decode(buffer('X', [0, 0])),
+    () => decode2(buffer('X', [0, 0])),
     PartialReadError,
     'Encountered UnexpectedEof, data only partially read'
   )
   await assertRejects(
-    () => decode(buffer('X', [0, 0, 0, 5])),
-    Error,
+    () => decode2(buffer('X', [0, 0, 0, 5])),
+    ProtocolError,
     'insufficient data to read'
   )
 })
 
 Deno.test('unrecognized', async () => {
   await assertRejects(
-    () => decode(buffer('.', [0, 0, 0, 4])),
-    TypeError,
+    () => decode2(buffer('.', [0, 0, 0, 4])),
+    ProtocolError,
     'unrecognized server response: .'
   )
 })
 
 Deno.test('AuthCode', async () => {
-  assertRejects(() => decode(buffer('R', [0, 0, 0, 8], [0, 0, 0, 1])))
-  assertEquals(await decode(buffer('R', [0, 0, 0, 8], [0, 0, 0, 0])), {
+  assertRejects(() => decode2(buffer('R', [0, 0, 0, 8], [0, 0, 0, 1])))
+  assertEquals(await decode2(buffer('R', [0, 0, 0, 8], [0, 0, 0, 0])), {
     code: 'R' as const,
     data: AuthCode.Ok,
   })
@@ -60,63 +54,63 @@ Deno.test('AuthCode', async () => {
 
 Deno.test('parameterStatus', async () => {
   assertRejects(
-    () => decode(buffer('S', [0, 0, 0, 12], 'app', [0], 'name')),
-    TypeError,
+    () => decode2(buffer('S', [0, 0, 0, 12], 'app', [0], 'name')),
+    ProtocolError,
     'not cstr'
   )
   assertEquals(
-    await decode(buffer('S', [0, 0, 0, 14], 'app', [0], 'name', [0, 0])),
+    await decode2(buffer('S', [0, 0, 0, 14], 'app', [0], 'name', [0, 0])),
     { code: 'S' as const, data: ['app', 'name'] }
   )
 })
 
 Deno.test('backendKeyData', async () => {
   assertRejects(
-    () => decode(buffer('K', [0, 0, 0, 11], [0, 0, 0, 1], [0, 0, 0])),
-    TypeError,
+    () => decode2(buffer('K', [0, 0, 0, 11], [0, 0, 0, 1], [0, 0, 0])),
+    ProtocolError,
     'not int32'
   )
   assertEquals(
-    await decode(buffer('K', [0, 0, 0, 12], [0, 0, 0, 1], [0, 0, 0, 2])),
+    await decode2(buffer('K', [0, 0, 0, 12], [0, 0, 0, 1], [0, 0, 0, 2])),
     { code: 'K' as const, data: [1, 2] }
   )
 })
 
 Deno.test('readyForQuery', async () => {
-  assertRejects(() => decode(buffer('Z', [0, 0, 0, 5], 'A')))
-  assertEquals(await decode(buffer('Z', [0, 0, 0, 5], 'I')), {
+  assertRejects(() => decode2(buffer('Z', [0, 0, 0, 5], 'A')))
+  assertEquals(await decode2(buffer('Z', [0, 0, 0, 5], 'I')), {
     code: 'Z' as const,
     data: ReadyState.Idle,
   })
-  assertEquals(await decode(buffer('Z', [0, 0, 0, 5], 'T')), {
+  assertEquals(await decode2(buffer('Z', [0, 0, 0, 5], 'T')), {
     code: 'Z' as const,
     data: ReadyState.Transaction,
   })
-  assertEquals(await decode(buffer('Z', [0, 0, 0, 5], 'E')), {
+  assertEquals(await decode2(buffer('Z', [0, 0, 0, 5], 'E')), {
     code: 'Z' as const,
     data: ReadyState.Error,
   })
 })
 
 Deno.test('parseComplete', async () => {
-  assertEquals(await decode(buffer('1', [0, 0, 0, 4])), { code: '1' as const })
+  assertEquals(await decode2(buffer('1', [0, 0, 0, 4])), { code: '1' as const })
 })
 
 Deno.test('bindComplete', async () => {
-  assertEquals(await decode(buffer('2', [0, 0, 0, 4])), { code: '2' as const })
+  assertEquals(await decode2(buffer('2', [0, 0, 0, 4])), { code: '2' as const })
 })
 
 Deno.test('closeComplete', async () => {
-  assertEquals(await decode(buffer('3', [0, 0, 0, 4])), { code: '3' as const })
+  assertEquals(await decode2(buffer('3', [0, 0, 0, 4])), { code: '3' as const })
 })
 
 Deno.test('noData', async () => {
-  assertEquals(await decode(buffer('n', [0, 0, 0, 4])), { code: 'n' as const })
+  assertEquals(await decode2(buffer('n', [0, 0, 0, 4])), { code: 'n' as const })
 })
 
 Deno.test('rowDescription', async () => {
   assertRejects(() =>
-    decode(
+    decode2(
       buffer(
         'T',
         [0, 0, 0, 27],
@@ -133,7 +127,7 @@ Deno.test('rowDescription', async () => {
     )
   )
   assertEquals(
-    await decode(
+    await decode2(
       buffer(
         'T',
         [0, 0, 0, 27],
@@ -165,7 +159,7 @@ Deno.test('rowDescription', async () => {
   )
 
   assertEquals(
-    await decode(
+    await decode2(
       buffer(
         'T',
         [0, 0, 0, 27],
@@ -199,22 +193,25 @@ Deno.test('rowDescription', async () => {
 
 Deno.test('parameterDescription', async () => {
   assertRejects(
-    () => decode(buffer('t', [0, 0, 0, 5], [0])),
-    TypeError,
+    () => decode2(buffer('t', [0, 0, 0, 5], [0])),
+    ProtocolError,
     'not int16'
   )
-  assertEquals(await decode(buffer('t', [0, 0, 0, 10], [0, 1], [0, 0, 0, 1])), {
-    code: 't',
-    data: [1],
-  })
+  assertEquals(
+    await decode2(buffer('t', [0, 0, 0, 10], [0, 1], [0, 0, 0, 1])),
+    {
+      code: 't',
+      data: [1],
+    }
+  )
 })
 
 Deno.test('dataRow', async () => {
   assertRejects(() =>
-    decode(buffer('D', [0, 0, 0, 11], [0, 1], [0, 0, 0, 2], [97]))
+    decode2(buffer('D', [0, 0, 0, 11], [0, 1], [0, 0, 0, 2], [97]))
   )
   assertEquals(
-    await decode(
+    await decode2(
       buffer(
         'D',
         [0, 0, 0, 15],
@@ -232,26 +229,18 @@ Deno.test('dataRow', async () => {
 })
 
 Deno.test('commandComplete', async () => {
-  assertEquals(await decode(buffer('C', [0, 0, 0, 13], 'SELECT 1', [0])), {
+  assertEquals(await decode2(buffer('C', [0, 0, 0, 13], 'SELECT 1', [0])), {
     code: 'C',
     data: 'SELECT 1',
   })
 })
 
 Deno.test('errorResponse', async () => {
-  assertEquals(await decode(buffer('E', [0, 0, 0, 12], 'M', 'error', [0, 0])), {
-    code: 'E',
-    data: { M: 'error' },
-  })
-})
-
-Deno.test('expect', () => {
-  assertEquals(expect('1')({ code: '1' }), undefined)
-  assertThrows(() => expect('1')(null), TypeError, 'unexpected eof')
-  assertThrows(
-    () => expect('1')({ code: '2' }),
-    TypeError,
-    'unexpected server response: 2, expected: 1'
+  assertEquals(
+    await decode2(buffer('E', [0, 0, 0, 12], 'M', 'error', [0, 0])),
+    {
+      code: 'E',
+      data: { M: 'error' },
+    }
   )
-  assertEquals(expect('C')({ code: 'C', data: 'SELECT 1' }), 'SELECT 1')
 })
