@@ -332,7 +332,7 @@ export class Protocol {
     return end()
   }
 
-  async flush() {
+  async send() {
     await this.#wd.write(this.#enc.buff)
     this.#enc.reset()
     await this.#wd.flush()

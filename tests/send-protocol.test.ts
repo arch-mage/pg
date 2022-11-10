@@ -11,7 +11,7 @@ async function encode<K extends keyof Protocol>(
   // deno-lint-ignore no-explicit-any
   const func = proto[method] as any
   func.apply(proto, args)
-  await proto.flush()
+  await proto.send()
   return buff.bytes()
 }
 
