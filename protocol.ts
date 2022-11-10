@@ -2,9 +2,7 @@ import {
   Reader,
   Writer,
   NodeBuffer,
-  concat,
   putVarnum,
-  varnum,
   BufReader,
   BufWriter,
 } from './deps.ts'
@@ -13,223 +11,26 @@ import {
   AuthCode,
   ColumnDescription,
   Format,
-  FullReader,
   Packet,
   Param,
   ReadyState,
 } from './types.ts'
+import { Decoder } from './decoder.ts'
+import { Encoder } from './encoder.ts'
 
-const SIZES = {
-  int8: 1,
-  int16: 2,
-  int32: 4,
-  uint8: 1,
-  uint16: 2,
-  uint32: 4,
-}
-
-class Encoder {
-  #pos: number
-  #enc: TextEncoder
-  #buf: Uint8Array
-
-  constructor(size: number = 4096) {
-    this.#pos = 0
-    this.#buf = new Uint8Array(size)
-    this.#enc = new TextEncoder()
-  }
-
-  #ensure(size: number) {
-    if (this.#buf.length - this.#pos >= size) {
-      return this
-    }
-    const grow = Math.max(size, Math.floor(this.#buf.length / 2))
-    this.#buf = concat(this.#buf, new Uint8Array(grow))
-    return this
-  }
-
-  #putVarNum(
-    dataType: 'int8' | 'int16' | 'int32' | 'uint8' | 'uint16' | 'uint32',
-    num: number
-  ): this {
-    this.#ensure(SIZES[dataType])
-    const array = this.#buf.subarray(this.#pos, this.#pos + SIZES[dataType])
-    putVarnum(array, num, { endian: 'big', dataType })
-    this.#pos += SIZES[dataType]
-    return this
-  }
-
-  reset(): this {
-    this.#pos = 0
-    return this
-  }
-
-  alloc(size: number): Uint8Array {
-    const pos = this.#pos
-    this.#ensure(size)
-    this.#pos += size
-    return this.#buf.subarray(pos, this.#pos)
-  }
-
-  get buff(): Uint8Array {
-    return this.#buf.subarray(0, this.#pos)
-  }
-
-  get pos(): number {
-    return this.#pos
-  }
-
-  int16(num: number): this {
-    return this.#putVarNum('int16', num)
-  }
-
-  int32(num: number): this {
-    return this.#putVarNum('int32', num)
-  }
-
-  byte(num: number): this {
-    this.#ensure(1)
-    putVarnum(this.#buf.subarray(this.#pos, this.#pos + 1), num, {
-      endian: 'big',
-      dataType: 'uint8',
-    })
-    this.#pos += 1
-    return this
-  }
-
-  str(ch: string): this {
-    const len = NodeBuffer.byteLength(ch)
-    this.#ensure(len)
-    this.#enc.encodeInto(ch, this.#buf.subarray(this.#pos, this.#pos + len))
-    this.#pos += len
-    return this
-  }
-
-  cstr(ch: string): this {
-    const len = NodeBuffer.byteLength(ch)
-    this.#ensure(len + 1)
-    this.#enc.encodeInto(ch, this.#buf.subarray(this.#pos, this.#pos + len))
-    this.#pos += len
-    this.#buf[this.#pos] = 0
-    this.#pos += 1
-    return this
-  }
-}
-
-class Decoder {
-  #pos: number
-  #end: number
-  #dec: TextDecoder
-  #head: Uint8Array
-  #body: Uint8Array
-
-  constructor(size = 4096) {
-    this.#pos = 0
-    this.#end = 0
-    this.#head = new Uint8Array(5)
-    this.#body = new Uint8Array(size)
-    this.#dec = new TextDecoder()
-  }
-
-  get #buf() {
-    return this.#body.subarray(0, this.#end)
-  }
-
-  #ensure(size: number): this {
-    if (this.#body.length - this.#pos >= size) {
-      return this
-    }
-    const grow = Math.max(size, Math.floor(this.#body.length / 2))
-    this.#body = concat(this.#body, new Uint8Array(grow))
-    return this
-  }
-
-  #reset(): this {
-    this.#pos = 0
-    this.#end = 0
-    return this
-  }
-
-  int16() {
-    const num = varnum(this.#buf.subarray(this.#pos, this.#pos + 2), {
-      dataType: 'int16',
-      endian: 'big',
-    })
-    this.#pos += 2
-    if (typeof num === 'number') {
-      return num
-    }
-    throw new ProtocolError('not int16')
-  }
-
-  int32() {
-    const num = varnum(this.#buf.subarray(this.#pos, this.#pos + 4), {
-      dataType: 'int32',
-      endian: 'big',
-    })
-    this.#pos += 4
-    if (typeof num === 'number') {
-      return num
-    }
-    throw new ProtocolError('not int32')
-  }
-
-  bytes(size: number) {
-    const buff = this.#buf.slice(this.#pos, this.#pos + size)
-    if (buff.length !== size) {
-      throw new ProtocolError(`not a buff with length of ${size}`)
-    }
-    this.#pos += buff.length
-    return buff
-  }
-
-  byte() {
-    return this.#buf[this.#pos++]
-  }
-
-  cstr() {
-    const idx = this.#buf.subarray(this.#pos).indexOf(0)
-    if (idx === -1) {
-      throw new ProtocolError('not cstr')
-    }
-    const str = this.#dec.decode(this.#buf.subarray(this.#pos, this.#pos + idx))
-    this.#pos += idx + 1
-    return str
-  }
-
-  async readPacket(reader: FullReader): Promise<string | null> {
-    this.#reset()
-
-    if (!(await reader.readFull(this.#head))) {
-      return null
-    }
-    const code = String.fromCharCode(this.#head[0])
-    this.#end =
-      (varnum(this.#head.subarray(1, 5), {
-        endian: 'big',
-        dataType: 'int32',
-      }) as number) - 4
-    this.#ensure(this.#end)
-
-    if (!(await reader.readFull(this.#buf))) {
-      throw new ProtocolError('insufficient data to read')
-    }
-
-    return code
-  }
-}
-
-export class Protocol {
+export class Protocol implements AsyncIterableIterator<Packet> {
   #enc: Encoder
   #dec: Decoder
   #rd: BufReader
   #wd: BufWriter
+  #closed: boolean
 
   constructor(reader: Reader, writer: Writer, size = 4096) {
     this.#enc = new Encoder(size)
     this.#dec = new Decoder(size)
     this.#rd = BufReader.create(reader, size)
     this.#wd = BufWriter.create(writer, size)
+    this.#closed = false
   }
 
   #begin(code?: string) {
@@ -247,6 +48,7 @@ export class Protocol {
     }
   }
 
+  // StartupMessage (F)
   startup(user: string, options: Record<string, string> = {}) {
     const end = this.#begin()
     Object.entries(options)
@@ -259,20 +61,24 @@ export class Protocol {
     return end()
   }
 
+  // Sync (F)
   sync(): this {
     return this.#begin('S')()
   }
 
+  // Terminate (F)
   terminate(): this {
     return this.#begin('X')()
   }
 
+  // Parse (F)
   parse(query: string, name = ''): this {
     const end = this.#begin('P')
     this.#enc.cstr(name).cstr(query).int16(0)
     return end()
   }
 
+  // Bind (F)
   bind(
     params: Param[] = [],
     portal = '',
@@ -308,24 +114,28 @@ export class Protocol {
     return end()
   }
 
+  // Describe (F)
   describe(kind: 'S' | 'P', name = ''): this {
     const end = this.#begin('D')
     this.#enc.byte(kind.charCodeAt(0)).cstr(name)
     return end()
   }
 
+  // Execute (F)
   execute(name = '', max = 0): this {
     const end = this.#begin('E')
     this.#enc.cstr(name).int32(max)
     return end()
   }
 
+  // Close (F)
   close(kind: 'S' | 'P', name = ''): this {
     const end = this.#begin('C')
     this.#enc.byte(kind.charCodeAt(0)).cstr(name)
     return end()
   }
 
+  // Query (F)
   query(query: string): this {
     const end = this.#begin('Q')
     this.#enc.cstr(query)
@@ -339,8 +149,12 @@ export class Protocol {
   }
 
   async recv(): Promise<Packet | null> {
+    if (this.#closed) {
+      return null
+    }
     const raw = await this.#dec.readPacket(this.#rd)
     if (!raw) {
+      this.#closed = true
       return null
     }
     const [code] = raw
@@ -385,12 +199,23 @@ export class Protocol {
     }
     throw new ProtocolError(`unrecognized server response: ${code}`)
   }
+
+  [Symbol.asyncIterator](): this {
+    return this
+  }
+
+  async next(): Promise<IteratorResult<Packet, null>> {
+    const value = await this.recv()
+    return value ? { done: false, value } : { done: true, value }
+  }
 }
 
+// CommandComplete (B)
 function commandComplete(dec: Decoder): string {
   return dec.cstr()
 }
 
+// DataRow (B)
 function dataRow(dec: Decoder): Array<Uint8Array | null> {
   const n = dec.int16()
   const columns = []
@@ -405,6 +230,7 @@ function dataRow(dec: Decoder): Array<Uint8Array | null> {
   return columns
 }
 
+// ErrorResponse (B)
 function errorResponse(dec: Decoder): Record<string, string> {
   const record: Record<string, string> = {}
   for (;;) {
@@ -417,20 +243,34 @@ function errorResponse(dec: Decoder): Record<string, string> {
   }
 }
 
+// BackendKeyData (B)
 function backendKeyData(dec: Decoder): [number, number] {
   return [dec.int32(), dec.int32()]
 }
 
+// AuthenticationCleartextPassword (B)
+// AuthenticationGSS (B)
+// AuthenticationGSSContinue (B)
+// AuthenticationKerberosV5 (B)
+// AuthenticationMD5Password (B)
+// AuthenticationOk (B)
+// AuthenticationSASL (B)
+// AuthenticationSASLContinue (B)
+// AuthenticationSASLFinal (B)
+// AuthenticationSCMCredential (B)
+// AuthenticationSSPI (B)
 function authentication(dec: Decoder): AuthCode {
   const code = dec.int32()
   if (code === 0) return code
   throw new ProtocolError(`unrecognized authentication response: ${code}`)
 }
 
+// ParameterStatus (B)
 function parameterStatus(dec: Decoder): [string, string] {
   return [dec.cstr(), dec.cstr()]
 }
 
+// RowDescription (B)
 function rowDescription(dec: Decoder): ColumnDescription[] {
   const n = dec.int16()
 
@@ -459,6 +299,7 @@ function rowDescription(dec: Decoder): ColumnDescription[] {
   return columns
 }
 
+// ParameterDescription (B)
 function parameterDescription(dec: Decoder): number[] {
   const n = dec.int16()
 
@@ -469,6 +310,7 @@ function parameterDescription(dec: Decoder): number[] {
   return oids
 }
 
+// ReadyForQuery (B)
 function readyForQuery(dec: Decoder): ReadyState {
   const code = String.fromCharCode(dec.byte())
   if (code === 'I') return ReadyState.Idle
@@ -476,3 +318,25 @@ function readyForQuery(dec: Decoder): ReadyState {
   if (code === 'E') return ReadyState.Error
   throw new ProtocolError(`unrecognized ready state: ${code}`)
 }
+
+// CopyBothResponse (B)
+// CopyInResponse (B)
+// CopyOutResponse (B)
+// EmptyQueryResponse (B)
+// FunctionCallResponse (B)
+// NegotiateProtocolVersion (B)
+// NoticeResponse (B)
+// NotificationResponse (B)
+// PortalSuspended (B)
+// CancelRequest (F)
+// CopyFail (F)
+// Flush (F)
+// FunctionCall (F)
+// GSSENCRequest (F)
+// GSSResponse (F)
+// PasswordMessage (F)
+// SASLInitialResponse (F)
+// SASLResponse (F)
+// SSLRequest (F)
+// CopyData (F & B)
+// CopyDone (F & B)
