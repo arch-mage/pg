@@ -38,7 +38,12 @@ export interface AuthSASLContinue {
   data: string
 }
 
-export type AuthData = AuthOk | AuthSASL | AuthSASLContinue
+export interface AuthSASLFinal {
+  code: AuthCode.SASLFinal
+  data: string
+}
+
+export type AuthData = AuthOk | AuthSASL | AuthSASLContinue | AuthSASLFinal
 
 export const enum ReadyState {
   Idle = 'I',

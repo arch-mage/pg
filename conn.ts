@@ -1,8 +1,21 @@
-import { ProtocolError, SASLError, UnexpectedResponseError } from './error.ts'
+import {
+  SASLError,
+  UnexpectedAuthError,
+  UnexpectedResponseError,
+} from './error.ts'
 import { Protocol } from './protocol.ts'
 import { AuthCode, Param } from './types.ts'
-import { mustPacket, extract, extractAuth, must } from './internal.ts'
+import {
+  mustPacket,
+  extract,
+  extractAuth,
+  must,
+  pbkdf2,
+  hmac256,
+  xorBuffer,
+} from './internal.ts'
 import { QueryResult } from './result.ts'
+import { base64 } from './deps.ts'
 
 export interface Options {
   user: string
@@ -26,6 +39,9 @@ export class Conn {
     if (opts.database) {
       startup.database = opts.database
     }
+    if (opts.password) {
+      startup.password = opts.password
+    }
     await conn.#startup(opts.user, startup)
     return conn
   }
@@ -34,7 +50,7 @@ export class Conn {
     this.#proto = proto
   }
 
-  async #sasl() {
+  async #sasl(password: string) {
     const clientNonce = 'nonce' // TODO: random nonce
     const message = `n,,n=*,r=${clientNonce}`
     await this.#proto.saslInit('SCRAM-SHA-256', message).send()
@@ -52,7 +68,7 @@ export class Conn {
       new SASLError('missing server nonce')
     )
     const salt = must(attrs.get('s'), new SASLError('missing server salt'))
-    const iteration = must(
+    const iterations = must(
       attrs.get('i'),
       new SASLError('missing iteration count')
     )
@@ -64,8 +80,48 @@ export class Conn {
     if (serverNonce.length <= clientNonce.length) {
       throw new SASLError('invalid server nonce')
     }
+    const enc = new TextEncoder()
 
-    throw new Error('not implemented')
+    const saltedPassword = await pbkdf2(
+      enc.encode(password),
+      base64.decode(salt),
+      parseInt(iterations, 10)
+    )
+
+    const clientKey = await hmac256(saltedPassword, enc.encode('Client Key'))
+    const storedKey = new Uint8Array(
+      await crypto.subtle.digest('SHA-256', clientKey)
+    )
+    const clientFirstMessageBare = `n=*,r=${clientNonce}`
+    const clientFInalMessageWithoutProof = `c=biws,r=${serverNonce}`
+    const authMessage = enc.encode(
+      [
+        clientFirstMessageBare,
+        serverFirstMessage,
+        clientFInalMessageWithoutProof,
+      ].join(',')
+    )
+    const clientSignature = await hmac256(storedKey, authMessage)
+    const clientProof = base64.encode(xorBuffer(clientKey, clientSignature))
+    const serverKey = await hmac256(saltedPassword, enc.encode('Server Key'))
+    const serverSignature = await hmac256(serverKey, authMessage).then(
+      base64.encode
+    )
+
+    // prettier-ignore
+    const clientFInalMessage = clientFInalMessageWithoutProof + ',p=' + clientProof
+    await this.#proto.sasl(clientFInalMessage).send()
+
+    const serverFinalMessage = await this.#proto
+      .recv()
+      .then(extract('R'))
+      .then(extractAuth(AuthCode.SASLFinal))
+
+    if (serverFinalMessage !== 'v=' + serverSignature) {
+      throw new SASLError('mismatch server signature')
+    }
+
+    await this.#proto.recv().then(extract('R')).then(extractAuth(AuthCode.Ok))
   }
 
   async #startup(user: string, opts: Record<string, string>) {
@@ -73,7 +129,11 @@ export class Conn {
     const auth = await this.#proto.recv().then(extract('R'))
 
     if (auth.code === 10) {
-      await this.#sasl()
+      await this.#sasl(opts.password)
+    } else if (auth.code === 0) {
+      /* empty */
+    } else {
+      throw new UnexpectedAuthError(auth.code, 0)
     }
 
     for await (const packet of this.#proto) {

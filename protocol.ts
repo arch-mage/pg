@@ -77,6 +77,12 @@ export class Protocol implements AsyncIterableIterator<Packet> {
     return end()
   }
 
+  sasl(message: string): this {
+    const end = this.#begin('p')
+    this.#enc.str(message)
+    return end()
+  }
+
   // Sync (F)
   sync(): this {
     return this.#begin('S')()
@@ -348,6 +354,10 @@ function authentication(dec: Decoder): AuthData {
 
   if (code === 11) {
     return { code: AuthCode.SASLContinue, data: dec.restStr() }
+  }
+
+  if (code === 12) {
+    return { code: AuthCode.SASLFinal, data: dec.restStr() }
   }
   throw new ProtocolError(`unrecognized authentication response: ${code}`)
 }
