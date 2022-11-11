@@ -86,3 +86,20 @@ Deno.test('query', async () => {
     new Uint8Array([81, 0, 0, 0, 11, 83, 69, 76, 69, 67, 84, 0])
   )
 })
+
+Deno.test('saslInit', async () => {
+  assertEquals(
+    await encode('saslInit', 'SCRAM-SHA-256', 'nonce'),
+    new Uint8Array([
+      112, 0, 0, 0, 27, 83, 67, 82, 65, 77, 45, 83, 72, 65, 45, 50, 53, 54, 0,
+      0, 0, 0, 5, 110, 111, 110, 99, 101,
+    ])
+  )
+})
+
+Deno.test('sasl', async () => {
+  assertEquals(
+    await encode('sasl', 'pass'),
+    new Uint8Array([112, 0, 0, 0, 8, 112, 97, 115, 115])
+  )
+})

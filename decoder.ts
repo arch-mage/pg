@@ -36,7 +36,7 @@ export class Decoder {
     return this
   }
 
-  int16() {
+  int16(): number {
     const num = varnum(this.#buf.subarray(this.#pos, this.#pos + 2), {
       dataType: 'int16',
       endian: 'big',
@@ -48,7 +48,7 @@ export class Decoder {
     throw new ProtocolError('not int16')
   }
 
-  int32() {
+  int32(): number {
     const num = varnum(this.#buf.subarray(this.#pos, this.#pos + 4), {
       dataType: 'int32',
       endian: 'big',
@@ -60,22 +60,27 @@ export class Decoder {
     throw new ProtocolError('not int32')
   }
 
-  bytes(size: number) {
+  bytes(size: number): Uint8Array {
     const buff = this.#buf.subarray(this.#pos, this.#pos + size)
+    this.#pos += Math.min(buff.length, size)
     if (buff.length !== size) {
       throw new ProtocolError(`not a buff with length of ${size}`)
     }
-    this.#pos += buff.length
     return buff
   }
 
-  byte() {
-    return this.#buf[this.#pos++]
+  byte(): number {
+    const byte = this.#buf.at(this.#pos++)
+    if (typeof byte === 'number') {
+      return byte
+    }
+    throw new ProtocolError('not byte')
   }
 
-  cstr() {
+  cstr(): string {
     const idx = this.#buf.subarray(this.#pos).indexOf(0)
     if (idx === -1) {
+      this.#pos = this.#end
       throw new ProtocolError('not cstr')
     }
     const str = this.#dec.decode(this.#buf.subarray(this.#pos, this.#pos + idx))
@@ -83,10 +88,20 @@ export class Decoder {
     return str
   }
 
-  restStr() {
-    const str = this.#dec.decode(this.#buf.subarray(this.#pos))
-    this.#pos = this.#end
-    return str
+  str(): string {
+    const idx = this.#buf.subarray(this.#pos).indexOf(0)
+    let buf
+    if (idx === -1) {
+      buf = this.#buf.subarray(this.#pos)
+      this.#pos = this.#end
+    } else {
+      buf = this.#buf.subarray(this.#pos, this.#pos + idx)
+      this.#pos += idx
+    }
+    if (buf.length === 0) {
+      throw new ProtocolError('empty string')
+    }
+    return this.#dec.decode(buf)
   }
 
   async readPacket(reader: FullReader): Promise<string | null> {

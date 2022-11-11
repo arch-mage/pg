@@ -1,3 +1,4 @@
+import { sizeof } from 'https://deno.land/std@0.163.0/encoding/binary.ts'
 import { concat, copy, NodeBuffer, putVarnum } from './deps.ts'
 
 export class Encoder {
@@ -24,10 +25,11 @@ export class Encoder {
     dataType: 'int8' | 'int16' | 'int32' | 'uint8' | 'uint16' | 'uint32',
     num: number
   ): this {
-    this.#ensure(SIZES[dataType])
-    const array = this.#buf.subarray(this.#pos, this.#pos + SIZES[dataType])
+    const size = sizeof(dataType)
+    this.#ensure(size)
+    const array = this.#buf.subarray(this.#pos, this.#pos + size)
     putVarnum(array, num, { endian: 'big', dataType })
-    this.#pos += SIZES[dataType]
+    this.#pos += size
     return this
   }
 
@@ -93,13 +95,4 @@ export class Encoder {
     this.#pos += 1
     return this
   }
-}
-
-const SIZES = {
-  int8: 1,
-  int16: 2,
-  int32: 4,
-  uint8: 1,
-  uint16: 2,
-  uint32: 4,
 }

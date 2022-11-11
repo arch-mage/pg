@@ -353,11 +353,11 @@ function authentication(dec: Decoder): AuthData {
   }
 
   if (code === 11) {
-    return { code: AuthCode.SASLContinue, data: dec.restStr() }
+    return { code: AuthCode.SASLContinue, data: dec.str() }
   }
 
   if (code === 12) {
-    return { code: AuthCode.SASLFinal, data: dec.restStr() }
+    return { code: AuthCode.SASLFinal, data: dec.str() }
   }
   throw new ProtocolError(`unrecognized authentication response: ${code}`)
 }
