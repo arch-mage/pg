@@ -1,5 +1,5 @@
 import { UnexpectedResponseError } from './error.ts'
-import { extract, must } from './internal.ts'
+import { extract, mustPacket } from './internal.ts'
 import { Protocol } from './protocol.ts'
 import { ColumnDescription } from './types.ts'
 
@@ -22,7 +22,7 @@ export class QueryResult {
     if (this.#closed) {
       return null
     }
-    const packet = await this.#proto.recv().then(must)
+    const packet = await this.#proto.recv().then(mustPacket)
     if (packet.code === 'D') {
       return packet.data
     }

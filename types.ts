@@ -2,7 +2,7 @@ export interface FullReader {
   readFull(buff: Uint8Array): Promise<Uint8Array | null>
 }
 
-export type Param = string | number | Date | null
+export type Param = Uint8Array | null
 
 export const enum Format {
   Text = 0,
@@ -23,6 +23,23 @@ export const enum AuthCode {
   SASLFinal = 12,
 }
 
+export interface AuthOk {
+  code: AuthCode.Ok
+  data: null
+}
+
+export interface AuthSASL {
+  code: AuthCode.SASL
+  data: string[]
+}
+
+export interface AuthSASLContinue {
+  code: AuthCode.SASLContinue
+  data: string
+}
+
+export type AuthData = AuthOk | AuthSASL | AuthSASLContinue
+
 export const enum ReadyState {
   Idle = 'I',
   Error = 'E',
@@ -39,7 +56,12 @@ export interface ColumnDescription {
   format: Format
 }
 
-export type Row = Record<string, string | null>
+export interface ErrorField {
+  S: string
+  C: string
+  M: string
+  [key: string]: string | undefined
+}
 
 export interface ParseComplete {
   code: '1'
@@ -63,17 +85,12 @@ export interface CommandComplete {
 
 export interface DataRow {
   code: 'D'
-  data: (Uint8Array | null)[]
+  data: Array<Uint8Array | null>
 }
 
 export interface ErrorResponse {
   code: 'E'
-  data: {
-    S: string
-    C: string
-    M: string
-    [key: string]: string | undefined
-  }
+  data: ErrorField
 }
 
 export interface BackendKeyData {
@@ -88,7 +105,7 @@ export interface NoData {
 
 export interface Authentication {
   code: 'R'
-  data: AuthCode
+  data: AuthData
 }
 
 export interface ParameterStatus {

@@ -48,7 +48,10 @@ Deno.test('AuthCode', async () => {
   assertRejects(() => decode2(buffer('R', [0, 0, 0, 8], [0, 0, 0, 1])))
   assertEquals(await decode2(buffer('R', [0, 0, 0, 8], [0, 0, 0, 0])), {
     code: 'R' as const,
-    data: AuthCode.Ok,
+    data: {
+      code: AuthCode.Ok,
+      data: null,
+    },
   })
 })
 

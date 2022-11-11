@@ -1,10 +1,18 @@
-import { ErrorResponse } from './types.ts'
+import { AuthCode, ErrorResponse } from './types.ts'
 
 export class ProtocolError extends Error {
   constructor(message: string) {
     super(message)
     Object.setPrototypeOf(this, ProtocolError.prototype)
     this.name = 'ProtocolError'
+  }
+}
+
+export class SASLError extends ProtocolError {
+  constructor(message: string) {
+    super(message)
+    Object.setPrototypeOf(this, SASLError.prototype)
+    this.name = 'SASLError'
   }
 }
 
@@ -42,6 +50,20 @@ export class UnexpectedResponseError extends ProtocolError {
     this.name = 'UnexpectedResponseError'
     this.received = received
     this.expected = expected ?? null
+  }
+}
+
+export class UnexpectedAuthError extends ProtocolError {
+  readonly received: AuthCode
+  readonly expected: AuthCode
+
+  constructor(received: AuthCode, expected: AuthCode) {
+    const message = `unexpected auth response: ${received}. expected: ${expected}`
+    super(message)
+    Object.setPrototypeOf(this, UnexpectedAuthError.prototype)
+    this.name = 'UnexpectedAuthError'
+    this.received = received
+    this.expected = expected
   }
 }
 

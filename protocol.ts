@@ -1,15 +1,17 @@
 import {
   Reader,
   Writer,
-  NodeBuffer,
   putVarnum,
   BufReader,
   BufWriter,
+  NodeBuffer,
 } from './deps.ts'
 import { ProtocolError, UnrecognizedResponseError } from './error.ts'
 import {
   AuthCode,
+  AuthData,
   ColumnDescription,
+  ErrorField,
   Format,
   Packet,
   Param,
@@ -24,6 +26,14 @@ export class Protocol implements AsyncIterableIterator<Packet> {
   #rd: BufReader
   #wd: BufWriter
   #closed: boolean
+
+  static fromPair(reader: Reader, writer: Writer, size = 4096) {
+    return new Protocol(reader, writer, size)
+  }
+
+  static fromConn(conn: Reader & Writer, size = 4096) {
+    return new Protocol(conn, conn, size)
+  }
 
   constructor(reader: Reader, writer: Writer, size = 4096) {
     this.#enc = new Encoder(size)
@@ -49,7 +59,7 @@ export class Protocol implements AsyncIterableIterator<Packet> {
   }
 
   // StartupMessage (F)
-  startup(user: string, options: Record<string, string> = {}) {
+  startup(user: string, options: Record<string, string> = {}): this {
     const end = this.#begin()
     Object.entries(options)
       .flat()
@@ -58,6 +68,12 @@ export class Protocol implements AsyncIterableIterator<Packet> {
         this.#enc.int32(196608).cstr('user').cstr(user)
       )
       .byte(0)
+    return end()
+  }
+
+  saslInit(mechanism: string, message: string): this {
+    const end = this.#begin('p')
+    this.#enc.cstr(mechanism).int32(NodeBuffer.byteLength(message)).str(message)
     return end()
   }
 
@@ -100,9 +116,8 @@ export class Protocol implements AsyncIterableIterator<Packet> {
       if (param === null) {
         this.#enc.int32(-1)
       } else {
-        const value = param.toString()
-        this.#enc.int32(NodeBuffer.byteLength(value))
-        this.#enc.str(value)
+        this.#enc.int32(param.length)
+        this.#enc.bytes(param)
       }
     }
 
@@ -234,12 +249,7 @@ function dataRow(dec: Decoder): Array<Uint8Array | null> {
 }
 
 // ErrorResponse (B)
-function errorResponse(dec: Decoder): {
-  S: string
-  C: string
-  M: string
-  [key: string]: string | undefined
-} {
+function errorResponse(dec: Decoder): ErrorField {
   // deno-lint-ignore no-explicit-any
   const record: any = {}
   for (;;) {
@@ -255,23 +265,6 @@ function errorResponse(dec: Decoder): {
 // BackendKeyData (B)
 function backendKeyData(dec: Decoder): [number, number] {
   return [dec.int32(), dec.int32()]
-}
-
-// AuthenticationCleartextPassword (B)
-// AuthenticationGSS (B)
-// AuthenticationGSSContinue (B)
-// AuthenticationKerberosV5 (B)
-// AuthenticationMD5Password (B)
-// AuthenticationOk (B)
-// AuthenticationSASL (B)
-// AuthenticationSASLContinue (B)
-// AuthenticationSASLFinal (B)
-// AuthenticationSCMCredential (B)
-// AuthenticationSSPI (B)
-function authentication(dec: Decoder): AuthCode {
-  const code = dec.int32()
-  if (code === 0) return code
-  throw new ProtocolError(`unrecognized authentication response: ${code}`)
 }
 
 // ParameterStatus (B)
@@ -326,6 +319,37 @@ function readyForQuery(dec: Decoder): ReadyState {
   if (code === 'T') return ReadyState.Transaction
   if (code === 'E') return ReadyState.Error
   throw new ProtocolError(`unrecognized ready state: ${code}`)
+}
+
+// AuthenticationCleartextPassword (B)
+// AuthenticationGSS (B)
+// AuthenticationGSSContinue (B)
+// AuthenticationKerberosV5 (B)
+// AuthenticationMD5Password (B)
+// AuthenticationOk (B)
+// AuthenticationSASL (B)
+// AuthenticationSASLContinue (B)
+// AuthenticationSASLFinal (B)
+// AuthenticationSCMCredential (B)
+// AuthenticationSSPI (B)
+function authentication(dec: Decoder): AuthData {
+  const code = dec.int32()
+  if (code === 0) {
+    return { code: AuthCode.Ok, data: null }
+  }
+
+  if (code === 10) {
+    const data = []
+    for (let mech = dec.cstr(); mech; mech = dec.cstr()) {
+      data.push(mech)
+    }
+    return { code: AuthCode.SASL, data }
+  }
+
+  if (code === 11) {
+    return { code: AuthCode.SASLContinue, data: dec.restStr() }
+  }
+  throw new ProtocolError(`unrecognized authentication response: ${code}`)
 }
 
 // CopyBothResponse (B)

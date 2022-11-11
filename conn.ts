@@ -1,7 +1,7 @@
-import { UnexpectedResponseError } from './error.ts'
+import { ProtocolError, SASLError, UnexpectedResponseError } from './error.ts'
 import { Protocol } from './protocol.ts'
-import { Param } from './types.ts'
-import { must, extract } from './internal.ts'
+import { AuthCode, Param } from './types.ts'
+import { mustPacket, extract, extractAuth, must } from './internal.ts'
 import { QueryResult } from './result.ts'
 
 export interface Options {
@@ -9,40 +9,81 @@ export interface Options {
   host?: string
   port?: number
   database?: string
+  password?: string
 }
 
 export class Conn {
   readonly #proto: Protocol
 
   static async connect(opts: Options) {
-    const conn = await Deno.connect({
-      port: opts.port ?? 5432,
-      hostname: opts.host,
-    })
-
-    const proto = new Protocol(conn, conn)
+    const conn = new Conn(
+      Protocol.fromConn(
+        await Deno.connect({ port: opts.port ?? 5432, hostname: opts.host })
+      )
+    )
 
     const startup: Record<string, string> = {}
     if (opts.database) {
       startup.database = opts.database
     }
-    await proto.startup(opts.user, startup).send()
-    await proto.recv().then(extract('R'))
+    await conn.#startup(opts.user, startup)
+    return conn
+  }
 
-    for await (const packet of proto) {
+  constructor(proto: Protocol) {
+    this.#proto = proto
+  }
+
+  async #sasl() {
+    const clientNonce = 'nonce' // TODO: random nonce
+    const message = `n,,n=*,r=${clientNonce}`
+    await this.#proto.saslInit('SCRAM-SHA-256', message).send()
+    const serverFirstMessage = await this.#proto
+      .recv()
+      .then(extract('R'))
+      .then(extractAuth(AuthCode.SASLContinue))
+    const attrs = new Map(
+      serverFirstMessage
+        .split(',')
+        .map((item) => item.split('=', 2) as [string, string])
+    )
+    const serverNonce = must(
+      attrs.get('r'),
+      new SASLError('missing server nonce')
+    )
+    const salt = must(attrs.get('s'), new SASLError('missing server salt'))
+    const iteration = must(
+      attrs.get('i'),
+      new SASLError('missing iteration count')
+    )
+
+    if (!serverNonce.startsWith(clientNonce)) {
+      throw new SASLError('invalid server nonce')
+    }
+
+    if (serverNonce.length <= clientNonce.length) {
+      throw new SASLError('invalid server nonce')
+    }
+
+    throw new Error('not implemented')
+  }
+
+  async #startup(user: string, opts: Record<string, string>) {
+    await this.#proto.startup(user, opts).send()
+    const auth = await this.#proto.recv().then(extract('R'))
+
+    if (auth.code === 10) {
+      await this.#sasl()
+    }
+
+    for await (const packet of this.#proto) {
       if (packet.code === 'K') {
         break
       }
       extract('S', packet)
     }
 
-    await proto.recv().then(extract('Z'))
-
-    return new Conn(proto)
-  }
-
-  constructor(proto: Protocol) {
-    this.#proto = proto
+    await this.#proto.recv().then(extract('Z'))
   }
 
   async batch(query: string) {
@@ -70,7 +111,7 @@ export class Conn {
 
     await this.#proto.recv().then(extract('1'))
     await this.#proto.recv().then(extract('2'))
-    const packet = await this.#proto.recv().then(must)
+    const packet = await this.#proto.recv().then(mustPacket)
     if (packet.code === 'n') {
       await this.#proto.recv().then(extract('C'))
       await this.#proto.recv().then(extract('3'))

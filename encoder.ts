@@ -1,4 +1,4 @@
-import { concat, NodeBuffer, putVarnum } from './deps.ts'
+import { concat, copy, NodeBuffer, putVarnum } from './deps.ts'
 
 export class Encoder {
   #pos: number
@@ -66,6 +66,13 @@ export class Encoder {
       dataType: 'uint8',
     })
     this.#pos += 1
+    return this
+  }
+
+  bytes(buff: Uint8Array): this {
+    this.#ensure(buff.length)
+    copy(buff, this.#buf, this.#pos)
+    this.#pos += buff.length
     return this
   }
 

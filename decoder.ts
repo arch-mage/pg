@@ -61,7 +61,7 @@ export class Decoder {
   }
 
   bytes(size: number) {
-    const buff = this.#buf.slice(this.#pos, this.#pos + size)
+    const buff = this.#buf.subarray(this.#pos, this.#pos + size)
     if (buff.length !== size) {
       throw new ProtocolError(`not a buff with length of ${size}`)
     }
@@ -80,6 +80,12 @@ export class Decoder {
     }
     const str = this.#dec.decode(this.#buf.subarray(this.#pos, this.#pos + idx))
     this.#pos += idx + 1
+    return str
+  }
+
+  restStr() {
+    const str = this.#dec.decode(this.#buf.subarray(this.#pos))
+    this.#pos = this.#end
     return str
   }
 
