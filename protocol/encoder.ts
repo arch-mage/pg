@@ -1,5 +1,4 @@
-import { sizeof } from 'https://deno.land/std@0.163.0/encoding/binary.ts'
-import { concat, copy, NodeBuffer, putVarnum } from './deps.ts'
+import { sizeof, concat, copy, NodeBuffer, putVarnum } from '../deps.ts'
 
 export class Encoder {
   #pos: number

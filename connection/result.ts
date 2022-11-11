@@ -1,7 +1,7 @@
-import { UnexpectedResponseError } from './error.ts'
-import { extract, mustPacket } from './internal.ts'
-import { Protocol } from './protocol.ts'
-import { ColumnDescription } from './types.ts'
+import { UnexpectedResponseError } from '../errors.ts'
+import { extract, mustPacket } from '../internal/assert.ts'
+import { Protocol } from '../protocol/mod.ts'
+import { ColumnDescription } from '../types.ts'
 
 export class QueryResult {
   readonly #columns: ReadonlyArray<ColumnDescription>
@@ -58,17 +58,4 @@ export class QueryResult {
     const value = await this.fetch()
     return value ? { done: false, value } : { done: true, value }
   }
-
-  // then<TResult1 = T[], TResult2 = never>(
-  //   onfulfilled?:
-  //     | ((value: T[]) => TResult1 | PromiseLike<TResult1>)
-  //     | null
-  //     | undefined,
-  //   onrejected?:
-  //     | ((reason: any) => TResult2 | PromiseLike<TResult2>)
-  //     | null
-  //     | undefined
-  // ): PromiseLike<TResult1 | TResult2> {
-  //   throw new Error('Method not implemented.')
-  // }
 }

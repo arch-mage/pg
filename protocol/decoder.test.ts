@@ -1,7 +1,14 @@
-import { Decoder } from '../decoder.ts'
-import { PartialReadError, Buffer, BufReader, putVarnum } from '../deps.ts'
-import { ProtocolError } from '../error.ts'
-import { assertRejects, assertEquals, assertThrows } from './deps.ts'
+import {
+  PartialReadError,
+  Buffer,
+  BufReader,
+  putVarnum,
+  assertRejects,
+  assertEquals,
+  assertThrows,
+} from '../deps.ts'
+import { Decoder } from './decoder.ts'
+import { ProtocolError } from '../errors.ts'
 
 async function init(code: string, buff: number[]) {
   const head = new Uint8Array(5)

@@ -1,6 +1,5 @@
-import { assertEquals } from './deps.ts'
-import { Protocol } from '../protocol.ts'
-import { Buffer } from '../deps.ts'
+import { Protocol } from './mod.ts'
+import { Buffer, assertEquals } from '../deps.ts'
 
 async function encode<K extends keyof Protocol>(
   method: K,

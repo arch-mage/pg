@@ -5,8 +5,8 @@ import {
   BufReader,
   BufWriter,
   NodeBuffer,
-} from './deps.ts'
-import { ProtocolError, UnrecognizedResponseError } from './error.ts'
+} from '../deps.ts'
+import { ProtocolError, UnrecognizedResponseError } from '../errors.ts'
 import {
   AuthCode,
   AuthData,
@@ -16,7 +16,7 @@ import {
   Packet,
   Param,
   ReadyState,
-} from './types.ts'
+} from '../types.ts'
 import { Decoder } from './decoder.ts'
 import { Encoder } from './encoder.ts'
 

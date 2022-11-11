@@ -3,7 +3,7 @@ import {
   PostgresError,
   UnexpectedAuthError,
   UnexpectedResponseError,
-} from '../error.ts'
+} from '../errors.ts'
 import {
   AuthCode,
   AuthData,

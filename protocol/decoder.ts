@@ -1,6 +1,6 @@
-import { concat, varnum } from './deps.ts'
-import { ProtocolError } from './error.ts'
-import { FullReader } from './types.ts'
+import { concat, varnum } from '../deps.ts'
+import { ProtocolError } from '../errors.ts'
+import { FullReader } from '../types.ts'
 
 export class Decoder {
   #pos: number

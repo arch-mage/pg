@@ -1,8 +1,13 @@
-import { assertEquals, assertRejects } from './deps.ts'
-import { Buffer, PartialReadError, concat } from '../deps.ts'
+import {
+  Buffer,
+  PartialReadError,
+  concat,
+  assertEquals,
+  assertRejects,
+} from '../deps.ts'
 import { AuthCode, ReadyState } from '../types.ts'
-import { Protocol } from '../protocol.ts'
-import { ProtocolError } from '../error.ts'
+import { Protocol } from './mod.ts'
+import { ProtocolError } from '../errors.ts'
 
 function buffer(...source: Array<string | number | number[]>) {
   return new Buffer(
