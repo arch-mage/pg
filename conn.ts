@@ -51,7 +51,9 @@ export class Conn {
   }
 
   async #sasl(password: string) {
-    const clientNonce = 'nonce' // TODO: random nonce
+    const clientNonce = base64.encode(
+      crypto.getRandomValues(new Uint8Array(18))
+    )
     const message = `n,,n=*,r=${clientNonce}`
     await this.#proto.saslInit('SCRAM-SHA-256', message).send()
     const serverFirstMessage = await this.#proto
