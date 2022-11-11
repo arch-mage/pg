@@ -5,15 +5,8 @@ import {
 } from './error.ts'
 import { Protocol } from './protocol.ts'
 import { AuthCode, Param } from './types.ts'
-import {
-  mustPacket,
-  extract,
-  extractAuth,
-  must,
-  pbkdf2,
-  hmac256,
-  xorBuffer,
-} from './internal.ts'
+import { mustPacket, extract, extractAuth, must } from './internal/assert.ts'
+import { pbkdf2, hmac256, xorBuffer } from './internal/crypto.ts'
 import { QueryResult } from './result.ts'
 import { base64 } from './deps.ts'
 
@@ -23,6 +16,7 @@ export interface Options {
   port?: number
   database?: string
   password?: string
+  params?: Record<string, string>
 }
 
 export class Conn {
@@ -35,14 +29,14 @@ export class Conn {
       )
     )
 
-    const startup: Record<string, string> = {}
-    if (opts.database) {
-      startup.database = opts.database
-    }
-    if (opts.password) {
-      startup.password = opts.password
-    }
-    await conn.#startup(opts.user, startup)
+    // const startup: Record<string, string> = {}
+    // if (opts.database) {
+    //   startup.database = opts.database
+    // }
+    // if (opts.password) {
+    //   startup.password = opts.password
+    // }
+    await conn.#startup(opts)
     return conn
   }
 
@@ -126,12 +120,12 @@ export class Conn {
     await this.#proto.recv().then(extract('R')).then(extractAuth(AuthCode.Ok))
   }
 
-  async #startup(user: string, opts: Record<string, string>) {
-    await this.#proto.startup(user, opts).send()
+  async #startup(opts: Options) {
+    await this.#proto.startup(opts.user, opts.params).send()
     const auth = await this.#proto.recv().then(extract('R'))
 
     if (auth.code === 10) {
-      await this.#sasl(opts.password)
+      await this.#sasl(opts.password ?? '')
     } else if (auth.code === 0) {
       /* empty */
     } else {
