@@ -68,7 +68,12 @@ export interface DataRow {
 
 export interface ErrorResponse {
   code: 'E'
-  data: Record<string, string>
+  data: {
+    S: string
+    C: string
+    M: string
+    [key: string]: string | undefined
+  }
 }
 
 export interface BackendKeyData {

@@ -1,4 +1,8 @@
-import { ConnectionClosedError, UnexpectedResponseError } from './error.ts'
+import {
+  ConnectionClosedError,
+  PostgresError,
+  UnexpectedResponseError,
+} from './error.ts'
 import { Packet } from './types.ts'
 
 export function must(packet: Packet | null): Packet {
@@ -17,7 +21,17 @@ export function extract<C>(
 ): Extract<Packet, { code: C }>['data']
 export function extract(code: string, packet?: Packet | null): unknown {
   function assert(packet: Packet | null) {
-    if (packet?.code === code) {
+    if (!packet) {
+      throw new ConnectionClosedError()
+    }
+    if (packet.code === 'E') {
+      if (code === 'E') {
+        return packet.data
+      }
+      throw new PostgresError(packet.data)
+    }
+
+    if (packet.code === code) {
       return packet.data
     }
     throw new UnexpectedResponseError(packet?.code ?? null, code)

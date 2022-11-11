@@ -234,8 +234,14 @@ function dataRow(dec: Decoder): Array<Uint8Array | null> {
 }
 
 // ErrorResponse (B)
-function errorResponse(dec: Decoder): Record<string, string> {
-  const record: Record<string, string> = {}
+function errorResponse(dec: Decoder): {
+  S: string
+  C: string
+  M: string
+  [key: string]: string | undefined
+} {
+  // deno-lint-ignore no-explicit-any
+  const record: any = {}
   for (;;) {
     const key = dec.byte()
     if (key === 0) {

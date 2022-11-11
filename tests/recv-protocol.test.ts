@@ -249,10 +249,28 @@ Deno.test('commandComplete', async () => {
 
 Deno.test('errorResponse', async () => {
   assertEquals(
-    await decode2(buffer('E', [0, 0, 0, 12], 'M', 'error', [0, 0])),
+    await decode2(
+      buffer(
+        'E',
+        [0, 0, 0, 22],
+        'C',
+        '0',
+        [0],
+        'S',
+        'error',
+        [0],
+        'M',
+        'error',
+        [0, 0]
+      )
+    ),
     {
       code: 'E',
-      data: { M: 'error' },
+      data: {
+        C: '0',
+        S: 'error',
+        M: 'error',
+      },
     }
   )
 })

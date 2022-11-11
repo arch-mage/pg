@@ -61,7 +61,7 @@ export class Conn {
   ): Promise<QueryResult | null> {
     await this.#proto
       .parse(query)
-      .bind(params, undefined, undefined, [1], [1])
+      .bind(params, undefined, undefined, [0], [1])
       .describe('P')
       .execute()
       .close('P')
