@@ -77,11 +77,17 @@ export interface ColumnDescription {
   format: Format
 }
 
-export interface ErrorField {
+export interface MessageFields {
   S: string
   C: string
   M: string
   [key: string]: string | undefined
+}
+
+export interface Notification {
+  processId: number
+  channel: string
+  payload: string
 }
 
 export interface ParseComplete {
@@ -99,6 +105,11 @@ export interface CloseComplete {
   data: null
 }
 
+export interface NotificationResponse {
+  code: 'A'
+  data: Notification
+}
+
 export interface CommandComplete {
   code: 'C'
   data: string
@@ -111,12 +122,17 @@ export interface DataRow {
 
 export interface ErrorResponse {
   code: 'E'
-  data: ErrorField
+  data: MessageFields
 }
 
 export interface BackendKeyData {
   code: 'K'
   data: [number, number]
+}
+
+export interface NoticeResponse {
+  code: 'N'
+  data: MessageFields
 }
 
 export interface NoData {
@@ -154,14 +170,16 @@ export interface ReadyForQuery {
   data: ReadyState
 }
 
-export type Packet =
+export type BackendPacket =
   | ParseComplete
   | BindComplete
   | CloseComplete
+  | NotificationResponse
   | CommandComplete
   | DataRow
   | ErrorResponse
   | BackendKeyData
+  | NoticeResponse
   | NoData
   | Authentication
   | ParameterStatus
@@ -169,3 +187,99 @@ export type Packet =
   | PortalSuspended
   | ParameterDescription
   | ReadyForQuery
+
+export interface Bind {
+  code: 'B'
+  data: {
+    portal: string
+    stmt: string
+    paramFormats: Format[]
+    params: Param[]
+    resultFormats: Format[]
+  }
+}
+
+export interface Close {
+  code: 'C'
+  data: {
+    kind: 'S' | 'P'
+    name: string
+  }
+}
+
+export interface Describe {
+  code: 'D'
+  data: {
+    kind: 'S' | 'P'
+    name: string
+  }
+}
+
+export interface Execute {
+  code: 'E'
+  data: {
+    max: number
+    name: string
+  }
+}
+
+export interface Parse {
+  code: 'P'
+  data: {
+    query: string
+    name: string
+    formats: Format[]
+  }
+}
+
+export interface Password {
+  code: 'p'
+  data: Uint8Array
+}
+
+export interface Query {
+  code: 'Q'
+  data: string
+}
+
+export interface Startup {
+  code: null
+  data: {
+    user: string
+    [param: string]: string
+  }
+}
+
+export interface Sync {
+  code: 'S'
+}
+
+export interface Terminate {
+  code: 'X'
+}
+
+export type FrontendPacket =
+  | Bind
+  | Close
+  | Describe
+  | Execute
+  | Parse
+  | Password
+  | Query
+  | Startup
+  | Sync
+  | Terminate
+
+export interface IProtocol extends AsyncIterableIterator<BackendPacket> {
+  recv(): Promise<BackendPacket | null>
+  encode(packet: FrontendPacket): this
+  send(): Promise<void>
+}
+
+export type NoticeListener = (fields: MessageFields) => void
+export type NotificationListener = (
+  processId: number,
+  channel: string,
+  payload: string
+) => void
+export type ParameterStatusListener = (name: string, data: string) => void

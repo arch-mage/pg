@@ -1,56 +1,24 @@
-import { base64, Buffer, Reader, Writer } from '../deps.ts'
+import { base64 } from '../deps.ts'
 import { hmac256, pbkdf2 } from '../internal/crypto.ts'
 import { Encoder } from '../protocol/encoder.ts'
 import { Conn } from './mod.ts'
-
-class TestBuffer implements Reader, Writer {
-  reader: Buffer
-  writer: Buffer
-
-  constructor() {
-    this.reader = new Buffer()
-    this.writer = new Buffer()
-  }
-
-  reset(): this {
-    this.reader.reset()
-    this.writer.reset()
-    return this
-  }
-
-  read(p: Uint8Array): Promise<number | null> {
-    return this.reader.read(p)
-  }
-
-  write(p: Uint8Array): Promise<number> {
-    return this.writer.write(p)
-  }
-}
+import { TestBuffer } from '../testing.ts'
 
 Deno.test('auth ok', async () => {
   const buff = new TestBuffer()
-  const data = new Encoder()
-    // authentication ok
-    .str('R')
-    .int32(8)
-    .int32(0)
-    // parameter status
-    .str('S')
-    .int32(8)
-    .cstr('a')
-    .cstr('b')
-    // backend key data
-    .str('K')
-    .int32(12)
-    .int32(1)
-    .int32(2)
-    // ready for query
-    .str('Z')
-    .int32(5)
-    // finish
-    .str('I').buff
 
-  buff.reader.writeSync(data as Uint8Array)
+  // prettier-ignore
+  const enc = new Encoder()
+    // authentication ok
+    .str('R').int32(8).int32(0)
+    // parameter status
+    .str('S').int32(8).cstr('a').cstr('b')
+    // backend key data
+    .str('K').int32(12).int32(1).int32(2)
+    // ready for query
+    .str('Z').int32(5).str('I')
+
+  buff.reader.writeSync(enc.buff as Uint8Array)
   await Conn.fromConn(buff, { user: 'postgres', database: 'postgres' })
 })
 
@@ -87,43 +55,23 @@ Deno.test('auth sasl', async () => {
     const serverFinalMessage = `v=${serverSignature}`
 
     const buff = new TestBuffer()
+    // prettier-ignore
     const data = new Encoder()
       // authentication sasl
-      .str('R')
-      .int32(23)
-      .int32(10)
-      .cstr('SCRAM-SHA-256')
-      .byte(0)
+      .str('R').int32(23).int32(10).cstr('SCRAM-SHA-256').byte(0)
       // authentication sasl continue
-      .str('R')
-      .int32(serverFirstMessage.length + 8)
-      .int32(11)
-      .str(serverFirstMessage)
+      .str('R').int32(serverFirstMessage.length + 8).int32(11).str(serverFirstMessage)
       // authentication sasl final
-      .str('R')
-      .int32(serverFinalMessage.length + 8)
-      .int32(12)
-      .str(serverFinalMessage) // precalculated
+      .str('R').int32(serverFinalMessage.length + 8).int32(12).str(serverFinalMessage)
       // authentication ok
-      .str('R')
-      .int32(8)
-      .int32(0)
+      .str('R').int32(8).int32(0)
       // parameter status
-      .str('S')
-      .int32(8)
-      .cstr('a')
-      .cstr('b')
+      .str('S').int32(8).cstr('a').cstr('b')
       // backend key data
-      .str('K')
-      .int32(12)
-      .int32(1)
-      .int32(2)
+      .str('K').int32(12).int32(1).int32(2)
       // ready for query
-      .str('Z')
-      .int32(5)
-      // finish
-      .str('I').buff
-    buff.reader.writeSync(data as Uint8Array)
+      .str('Z').int32(5).str('I')
+    buff.reader.writeSync(data.buff as Uint8Array)
     return buff
   }
 

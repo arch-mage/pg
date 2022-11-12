@@ -1,17 +1,20 @@
-import { base64 } from '../deps.ts'
+import { putVarnum, base64, NodeBuffer } from '../deps.ts'
 import { SASLError } from '../errors.ts'
-import { Protocol } from '../protocol/mod.ts'
-import { AuthCode } from '../types.ts'
+import { AuthCode, IProtocol } from '../types.ts'
 import { extract, extractAuth, must } from './assert.ts'
 import { hmac256, pbkdf2, xorBuffer } from './crypto.ts'
 
 export async function sasl(
-  proto: Protocol,
+  proto: IProtocol,
   password: string,
   clientNonce: string
 ) {
-  const message = `n,,n=*,r=${clientNonce}`
-  await proto.saslInit('SCRAM-SHA-256', message).send()
+  await proto
+    .encode({
+      code: 'p',
+      data: encodeInit(clientNonce),
+    })
+    .send()
   const serverFirstMessage = await proto
     .recv()
     .then(extract('R'))
@@ -68,7 +71,12 @@ export async function sasl(
 
   // prettier-ignore
   const clientFinalMessage = clientFinalMessageWithoutProof + ',p=' + clientProof
-  await proto.sasl(clientFinalMessage).send()
+  await proto
+    .encode({
+      code: 'p',
+      data: enc.encode(clientFinalMessage),
+    })
+    .send()
 
   const serverFinalMessage = await proto
     .recv()
@@ -80,4 +88,14 @@ export async function sasl(
   }
 
   await proto.recv().then(extract('R')).then(extractAuth(AuthCode.Ok))
+}
+
+function encodeInit(nonce: string): Uint8Array {
+  const enc = new TextEncoder()
+  const len = NodeBuffer.byteLength(nonce)
+  const buff = new Uint8Array(14 + 4 + len)
+  enc.encodeInto('SCRAM-SHA-256', buff)
+  putVarnum(buff.subarray(14, 18), len)
+  enc.encodeInto(nonce, buff.subarray(18))
+  return buff
 }

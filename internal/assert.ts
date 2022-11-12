@@ -2,18 +2,18 @@ import {
   ConnectionClosedError,
   PostgresError,
   UnexpectedAuthCodeError,
-  UnexpectedResponseCodeError,
+  UnexpectedResponseError,
 } from '../errors.ts'
 import {
   AuthCode,
   AuthData,
   ColumnDescription,
   ErrorResponse,
-  Packet,
+  BackendPacket,
   ReadyState,
 } from '../types.ts'
 
-export function mustPacket(packet: Packet | null): Packet {
+export function mustPacket(packet: BackendPacket | null): BackendPacket {
   if (packet) {
     return packet
   }
@@ -30,57 +30,75 @@ export function must<T>(value: T | null | undefined, err: Error): T {
   return value
 }
 
-export function extract(code: '1', packet: Packet | null): null
-export function extract(code: '1'): (packet: Packet | null) => null
+export function extract(code: '1', packet: BackendPacket | null): null
+export function extract(code: '1'): (packet: BackendPacket | null) => null
 
-export function extract(code: '2', packet: Packet | null): null
-export function extract(code: '2'): (packet: Packet | null) => null
+export function extract(code: '2', packet: BackendPacket | null): null
+export function extract(code: '2'): (packet: BackendPacket | null) => null
 
-export function extract(code: '3', packet: Packet | null): null
-export function extract(code: '3'): (packet: Packet | null) => null
+export function extract(code: '3', packet: BackendPacket | null): null
+export function extract(code: '3'): (packet: BackendPacket | null) => null
 
-export function extract(code: 'C', packet: Packet | null): string
-export function extract(code: 'C'): (packet: Packet | null) => string
+export function extract(code: 'C', packet: BackendPacket | null): string
+export function extract(code: 'C'): (packet: BackendPacket | null) => string
 
 export function extract(
   code: 'D',
-  packet: Packet | null
+  packet: BackendPacket | null
 ): Array<Uint8Array | null>
 export function extract(
   code: 'D'
-): (packet: Packet | null) => Array<Uint8Array | null>
+): (packet: BackendPacket | null) => Array<Uint8Array | null>
 
-export function extract(code: 'E', packet: Packet | null): ErrorResponse
-export function extract(code: 'E'): (packet: Packet | null) => ErrorResponse
+export function extract(code: 'E', packet: BackendPacket | null): ErrorResponse
+export function extract(
+  code: 'E'
+): (packet: BackendPacket | null) => ErrorResponse
 
-export function extract(code: 'K', packet: Packet | null): [number, number]
-export function extract(code: 'K'): (packet: Packet | null) => [number, number]
+export function extract(
+  code: 'K',
+  packet: BackendPacket | null
+): [number, number]
+export function extract(
+  code: 'K'
+): (packet: BackendPacket | null) => [number, number]
 
-export function extract(code: 'n', packet: Packet | null): null
-export function extract(code: 'n'): (packet: Packet | null) => null
+export function extract(code: 'n', packet: BackendPacket | null): null
+export function extract(code: 'n'): (packet: BackendPacket | null) => null
 
-export function extract(code: 'R', packet: Packet | null): AuthData
-export function extract(code: 'R'): (packet: Packet | null) => AuthData
+export function extract(code: 'R', packet: BackendPacket | null): AuthData
+export function extract(code: 'R'): (packet: BackendPacket | null) => AuthData
 
-export function extract(code: 'S', packet: Packet | null): [string, string]
-export function extract(code: 'S'): (packet: Packet | null) => [string, string]
+export function extract(
+  code: 'S',
+  packet: BackendPacket | null
+): [string, string]
+export function extract(
+  code: 'S'
+): (packet: BackendPacket | null) => [string, string]
 
-export function extract(code: 's', packet: Packet | null): null
-export function extract(code: 's'): (packet: Packet | null) => null
+export function extract(code: 's', packet: BackendPacket | null): null
+export function extract(code: 's'): (packet: BackendPacket | null) => null
 
-export function extract(code: 'T', packet: Packet | null): ColumnDescription[]
+export function extract(
+  code: 'T',
+  packet: BackendPacket | null
+): ColumnDescription[]
 export function extract(
   code: 'T'
-): (packet: Packet | null) => ColumnDescription[]
+): (packet: BackendPacket | null) => ColumnDescription[]
 
-export function extract(code: 't', packet: Packet | null): number[]
-export function extract(code: 't'): (packet: Packet | null) => number[]
+export function extract(code: 't', packet: BackendPacket | null): number[]
+export function extract(code: 't'): (packet: BackendPacket | null) => number[]
 
-export function extract(code: 'Z', packet: Packet | null): ReadyState
-export function extract(code: 'Z'): (packet: Packet | null) => ReadyState
+export function extract(code: 'Z', packet: BackendPacket | null): ReadyState
+export function extract(code: 'Z'): (packet: BackendPacket | null) => ReadyState
 
-export function extract(code: Packet['code'], packet?: Packet | null): unknown {
-  function assert(packet: Packet | null) {
+export function extract(
+  code: BackendPacket['code'],
+  packet?: BackendPacket | null
+): unknown {
+  function assert(packet: BackendPacket | null) {
     if (!packet) {
       throw new ConnectionClosedError()
     }
@@ -94,7 +112,7 @@ export function extract(code: Packet['code'], packet?: Packet | null): unknown {
     if (packet.code === code) {
       return packet.data
     }
-    throw new UnexpectedResponseCodeError(packet.code, code)
+    throw new UnexpectedResponseError(packet, code)
   }
   return typeof packet !== 'undefined' ? assert(packet) : assert
 }

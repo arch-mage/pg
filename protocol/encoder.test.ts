@@ -1,4 +1,4 @@
-import { assertEquals, uint8 } from '../deps.ts'
+import { assertEquals, uint8 } from '../testing.ts'
 import { Encoder } from './encoder.ts'
 
 Deno.test('int16', () => {

@@ -1,7 +1,6 @@
-import { UnexpectedResponseCodeError } from '../errors.ts'
+import { UnexpectedResponseError } from '../errors.ts'
 import { extract, mustPacket } from '../internal/assert.ts'
-import { Protocol } from '../protocol/mod.ts'
-import { ColumnDescription, Param, Row } from '../types.ts'
+import { Row, Param, IProtocol, ColumnDescription } from '../types.ts'
 
 export const enum TaskStateCode {
   Fresh,
@@ -27,19 +26,24 @@ export interface TaskRunning {
 
 export interface TaskClosed {
   code: TaskStateCode.Closed
+  error?: Error
 }
 
 export type TaskState = TaskFresh | TaskInitializing | TaskRunning | TaskClosed
 
-export class Task {
-  readonly #proto: Protocol
+export class Task
+  implements
+    PromiseLike<[Row[], ColumnDescription[]] | null>,
+    AsyncIterableIterator<[Row, ColumnDescription[]] | null>
+{
+  readonly #proto: IProtocol
   readonly #listeners: Array<() => void>
   readonly #turn: Promise<void>
 
   #state: TaskState
 
   constructor(
-    proto: Protocol,
+    proto: IProtocol,
     query: string,
     params: Param[],
     turn: Promise<void>
@@ -50,11 +54,9 @@ export class Task {
     this.#turn = turn
   }
 
-  #close() {
-    this.#state = { code: TaskStateCode.Closed }
-    for (const fn of this.#listeners) {
-      fn()
-    }
+  #close(error?: Error) {
+    this.#state = { code: TaskStateCode.Closed, error }
+    this.#listeners.forEach((fn) => fn())
     return this.#state
   }
 
@@ -66,13 +68,36 @@ export class Task {
     const { query, params } = this.#state
     this.#state = { code: TaskStateCode.Initializing }
 
-    await this.#proto
-      .parse(query)
-      .bind(params, '', '', [1], [1])
-      .describe('P')
-      .execute()
-      .close('P')
-      .sync()
+    this.#proto
+      .encode({
+        code: 'P',
+        data: { name: '', query, formats: [] },
+      })
+      .encode({
+        code: 'B',
+        data: {
+          portal: '',
+          stmt: '',
+          paramFormats: [1],
+          params,
+          resultFormats: [1],
+        },
+      })
+      .encode({
+        code: 'D',
+        data: { kind: 'P', name: '' },
+      })
+      .encode({
+        code: 'E',
+        data: { name: '', max: 0 },
+      })
+      .encode({
+        code: 'C',
+        data: { kind: 'P', name: '' },
+      })
+      .encode({
+        code: 'S',
+      })
       .send()
 
     await this.#proto.recv().then(extract('1'))
@@ -92,69 +117,89 @@ export class Task {
       return this.#state
     }
 
-    throw new UnexpectedResponseCodeError(packet.code)
+    throw new UnexpectedResponseError(packet)
   }
 
-  async fetchone(): Promise<[Row, ColumnDescription[]] | null> {
-    const state = await this.#initialize()
-    if (state.code === TaskStateCode.Initializing) {
-      throw new Error('invalid state')
-    }
-    if (state.code === TaskStateCode.Closed) {
-      return null
-    }
-
-    const packet = await this.#proto.recv().then(mustPacket)
-
-    if (packet.code === 'D') {
-      if (packet.data.length !== state.fields.length) {
-        throw new Error('mismatch number of field')
+  async #fetchone(): Promise<[Row, ColumnDescription[]] | null> {
+    try {
+      const state = await this.#initialize()
+      if (state.code === TaskStateCode.Initializing) {
+        throw new Error('invalid state')
       }
-      return [packet.data, state.fields]
-    }
+      if (state.code === TaskStateCode.Closed) {
+        return null
+      }
 
-    if (packet.code === 'C') {
+      const packet = await this.#proto.recv().then(mustPacket)
+
+      if (packet.code === 'D') {
+        if (packet.data.length !== state.fields.length) {
+          throw new Error('mismatch number of field')
+        }
+        return [packet.data, state.fields]
+      }
+
+      if (packet.code === 'C') {
+        await this.#proto.recv().then(extract('3'))
+        await this.#proto.recv().then(extract('Z'))
+        this.#close()
+        return null
+      }
+
+      throw new UnexpectedResponseError(packet)
+    } catch (error) {
+      for await (const packet of this.#proto) {
+        if (packet.code === 'Z') {
+          break
+        }
+      }
+      this.#close(error)
+      throw error
+    }
+  }
+
+  async #fetchall(): Promise<[Row[], ColumnDescription[]] | null> {
+    try {
+      const state = await this.#initialize()
+      if (state.code === TaskStateCode.Initializing) {
+        throw new Error('invalid state')
+      }
+      if (state.code === TaskStateCode.Closed) {
+        return null
+      }
+
+      const rows: Row[] = []
+      for await (const packet of this.#proto) {
+        if (packet.code === 'C') {
+          break
+        }
+
+        if (packet.code !== 'D') {
+          throw new UnexpectedResponseError(packet)
+        }
+
+        if (packet.data.length !== state.fields.length) {
+          throw new Error('mismatch number of field')
+        }
+        rows.push(packet.data)
+        continue
+      }
       await this.#proto.recv().then(extract('3'))
       await this.#proto.recv().then(extract('Z'))
       this.#close()
-      return null
+      return [rows, state.fields]
+    } catch (error) {
+      for await (const packet of this.#proto) {
+        if (packet.code === 'Z') {
+          break
+        }
+      }
+      this.#close(error)
+      throw error
     }
-
-    throw new UnexpectedResponseCodeError(packet.code)
   }
 
-  async fetchall(): Promise<[Row[], ColumnDescription[]] | null> {
-    const state = await this.#initialize()
-    if (state.code === TaskStateCode.Initializing) {
-      throw new Error('invalid state')
-    }
-    if (state.code === TaskStateCode.Closed) {
-      return null
-    }
-
-    const rows: Row[] = []
-    for await (const packet of this.#proto) {
-      if (packet.code === 'C') {
-        break
-      }
-
-      if (packet.code !== 'D') {
-        throw new UnexpectedResponseCodeError(packet.code)
-      }
-
-      if (packet.data.length !== state.fields.length) {
-        throw new Error('mismatch number of field')
-      }
-      rows.push(packet.data)
-      continue
-    }
-    await this.#proto.recv().then(extract('3'))
-    await this.#proto.recv().then(extract('Z'))
-    this.#close()
-    return [rows, state.fields]
-  }
-
-  listen(listener: () => void) {
+  onClose(listener: () => void) {
     this.#listeners.push(listener)
     return () => {
       const idx = this.#listeners.indexOf(listener)
@@ -162,5 +207,27 @@ export class Task {
         this.#listeners.splice(idx, 1)
       }
     }
+  }
+
+  then<TResult1 = [Row[], ColumnDescription[]] | null, TResult2 = never>(
+    onfulfilled?:
+      | ((
+          value: [Row[], ColumnDescription[]] | null
+        ) => TResult1 | PromiseLike<TResult1>)
+      | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
+  ): PromiseLike<TResult1 | TResult2> {
+    return this.#fetchall().then(onfulfilled, onrejected)
+  }
+
+  [Symbol.asyncIterator](): this {
+    return this
+  }
+
+  async next(): Promise<
+    IteratorResult<[Row, ColumnDescription[]] | null, null>
+  > {
+    const value = await this.#fetchone()
+    return value ? { done: false, value } : { done: true, value }
   }
 }

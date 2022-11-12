@@ -1,4 +1,5 @@
-import { Buffer, concat, assertEquals, assertRejects } from '../deps.ts'
+import { Buffer, concat } from '../deps.ts'
+import { assertEquals, assertRejects } from '../testing.ts'
 import { AuthCode, ReadyState } from '../types.ts'
 import { Protocol } from './mod.ts'
 import { DecodeError, UnrecognizedResponseError } from '../errors.ts'
@@ -308,11 +309,43 @@ Deno.test('errorResponse', async () => {
     ),
     {
       code: 'E',
-      data: {
-        C: '0',
-        S: 'error',
-        M: 'error',
-      },
+      data: { C: '0', S: 'error', M: 'error' },
+    }
+  )
+})
+
+Deno.test('noticeResponse', async () => {
+  assertEquals(
+    await decode(
+      buffer(
+        'N',
+        [0, 0, 0, 24],
+        'C',
+        '0',
+        [0],
+        'S',
+        'notice',
+        [0],
+        'M',
+        'notice',
+        [0, 0]
+      )
+    ),
+    {
+      code: 'N',
+      data: { C: '0', S: 'notice', M: 'notice' },
+    }
+  )
+})
+
+Deno.test('notificationResponse', async () => {
+  assertEquals(
+    await decode(
+      buffer('A', [0, 0, 0, 18], [0, 0, 0, 1], 'info', [0], 'info', [0])
+    ),
+    {
+      code: 'A',
+      data: { processId: 1, channel: 'info', payload: 'info' },
     }
   )
 })

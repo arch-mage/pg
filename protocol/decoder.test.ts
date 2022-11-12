@@ -1,11 +1,5 @@
-import {
-  Buffer,
-  BufReader,
-  putVarnum,
-  assertRejects,
-  assertEquals,
-  assertThrows,
-} from '../deps.ts'
+import { Buffer, BufReader, putVarnum } from '../deps.ts'
+import { assertRejects, assertEquals, assertThrows } from '../testing.ts'
 import { Decoder } from './decoder.ts'
 import { DecodeError } from '../errors.ts'
 

@@ -65,7 +65,7 @@ export class Decoder {
   }
 
   bytes(size: number): Uint8Array {
-    const buff = this.#sub.subarray(this.#pos, this.#pos + size)
+    const buff = this.#sub.slice(this.#pos, this.#pos + size)
     this.#pos += Math.min(buff.length, size)
     if (buff.length !== size) {
       throw new DecodeError(`not a buff with length of ${size}`)

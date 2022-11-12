@@ -1,4 +1,4 @@
-import { AuthCode, ErrorField, Packet } from './types.ts'
+import { AuthCode, MessageFields, BackendPacket } from './types.ts'
 
 export class ProtocolError extends Error {
   constructor(message: string, cause?: unknown) {
@@ -46,15 +46,15 @@ export class UnrecognizedResponseError extends DecodeError {
   }
 }
 
-export class UnexpectedResponseCodeError extends DecodeError {
-  readonly received: Packet['code']
-  readonly expected?: Packet['code']
+export class UnexpectedResponseError extends DecodeError {
+  readonly received: BackendPacket
+  readonly expected?: BackendPacket['code']
 
-  constructor(received: Packet['code'], expected?: Packet['code']) {
+  constructor(received: BackendPacket, expected?: BackendPacket['code']) {
     const message =
       typeof expected === 'string'
-        ? `unexpected server response: ${received}. expected: ${expected}`
-        : `unexpected server response: ${received}`
+        ? `unexpected server response: ${received.code}. expected: ${expected}`
+        : `unexpected server response: ${received.code}`
     super(message)
     this.name = 'UnexpectedResponseError'
     this.received = received
@@ -112,7 +112,7 @@ export class PostgresError extends Error {
   readonly line?: string
   readonly routine?: string
 
-  constructor(packet: ErrorField) {
+  constructor(packet: MessageFields) {
     super()
     this.name = 'PostgresError'
     this.code = packet.C
