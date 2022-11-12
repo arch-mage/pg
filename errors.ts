@@ -1,4 +1,4 @@
-import { AuthCode, ErrorField } from './types.ts'
+import { AuthCode, ErrorField, Packet } from './types.ts'
 
 export class ProtocolError extends Error {
   constructor(message: string, cause?: unknown) {
@@ -47,10 +47,10 @@ export class UnrecognizedResponseError extends DecodeError {
 }
 
 export class UnexpectedResponseCodeError extends DecodeError {
-  readonly received: string
-  readonly expected?: string
+  readonly received: Packet['code']
+  readonly expected?: Packet['code']
 
-  constructor(received: string, expected?: string) {
+  constructor(received: Packet['code'], expected?: Packet['code']) {
     const message =
       typeof expected === 'string'
         ? `unexpected server response: ${received}. expected: ${expected}`

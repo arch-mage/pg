@@ -1,12 +1,9 @@
-import {
-  UnexpectedAuthCodeError,
-  UnexpectedResponseCodeError,
-} from '../errors.ts'
+import { UnexpectedAuthCodeError } from '../errors.ts'
 import { Protocol } from '../protocol/mod.ts'
 import { AuthCode, Param } from '../types.ts'
-import { mustPacket, extract } from '../internal/assert.ts'
-import { QueryResult } from './result.ts'
+import { extract } from '../internal/assert.ts'
 import { sasl } from '../internal/sasl-scram-sha-256.ts'
+import { Task } from './task.ts'
 
 export interface Options {
   user: string
@@ -19,6 +16,7 @@ export interface Options {
 
 export class Conn {
   readonly #proto: Protocol
+  readonly #queue: Promise<void>[]
 
   static async connect(opts: Options) {
     const conn = new Conn(
@@ -36,6 +34,7 @@ export class Conn {
 
   constructor(proto: Protocol) {
     this.#proto = proto
+    this.#queue = []
   }
 
   async #startup(opts: Options) {
@@ -60,42 +59,10 @@ export class Conn {
     await this.#proto.recv().then(extract('Z'))
   }
 
-  async batch(query: string) {
-    await this.#proto.query(query).send()
-
-    for await (const packet of this.#proto) {
-      if (packet.code === 'Z') {
-        break
-      }
-    }
-  }
-
-  async query(
-    query: string,
-    params: Param[] = []
-  ): Promise<QueryResult | null> {
-    await this.#proto
-      .parse(query)
-      .bind(params, undefined, undefined, [0], [1])
-      .describe('P')
-      .execute()
-      .close('P')
-      .sync()
-      .send()
-
-    await this.#proto.recv().then(extract('1'))
-    await this.#proto.recv().then(extract('2'))
-    const packet = await this.#proto.recv().then(mustPacket)
-    if (packet.code === 'n') {
-      await this.#proto.recv().then(extract('C'))
-      await this.#proto.recv().then(extract('3'))
-      await this.#proto.recv().then(extract('Z'))
-      return null
-    }
-    if (packet.code === 'T') {
-      return new QueryResult(this.#proto, packet.data)
-    }
-
-    throw new UnexpectedResponseCodeError(packet.code)
+  query(query: string, params: Param[] = []) {
+    const entry = this.#queue.shift() ?? Promise.resolve()
+    const task = new Task(this.#proto, query, params, entry)
+    this.#queue.push(new Promise(task.listen.bind(task)))
+    return task
   }
 }

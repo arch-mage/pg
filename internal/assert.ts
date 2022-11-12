@@ -79,7 +79,7 @@ export function extract(code: 't'): (packet: Packet | null) => number[]
 export function extract(code: 'Z', packet: Packet | null): ReadyState
 export function extract(code: 'Z'): (packet: Packet | null) => ReadyState
 
-export function extract(code: string, packet?: Packet | null): unknown {
+export function extract(code: Packet['code'], packet?: Packet | null): unknown {
   function assert(packet: Packet | null) {
     if (!packet) {
       throw new ConnectionClosedError()
