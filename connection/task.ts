@@ -1,7 +1,7 @@
 import { UnexpectedResponseCodeError } from '../errors.ts'
 import { extract, mustPacket } from '../internal/assert.ts'
 import { Protocol } from '../protocol/mod.ts'
-import { ColumnDescription, Param } from '../types.ts'
+import { ColumnDescription, Param, Row } from '../types.ts'
 
 export const enum TaskStateCode {
   Fresh,
@@ -95,7 +95,7 @@ export class Task {
     throw new UnexpectedResponseCodeError(packet.code)
   }
 
-  async fetchone(): Promise<[Column[], ColumnDescription[]] | null> {
+  async fetchone(): Promise<[Row, ColumnDescription[]] | null> {
     const state = await this.#initialize()
     if (state.code === TaskStateCode.Initializing) {
       throw new Error('invalid state')
@@ -123,7 +123,7 @@ export class Task {
     throw new UnexpectedResponseCodeError(packet.code)
   }
 
-  async fetchall(): Promise<[Column[][], ColumnDescription[]] | null> {
+  async fetchall(): Promise<[Row[], ColumnDescription[]] | null> {
     const state = await this.#initialize()
     if (state.code === TaskStateCode.Initializing) {
       throw new Error('invalid state')
@@ -132,7 +132,7 @@ export class Task {
       return null
     }
 
-    const rows: Column[][] = []
+    const rows: Row[] = []
     for await (const packet of this.#proto) {
       if (packet.code === 'C') {
         break
@@ -164,5 +164,3 @@ export class Task {
     }
   }
 }
-
-export type Column = Uint8Array | null

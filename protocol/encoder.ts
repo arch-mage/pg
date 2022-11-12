@@ -1,4 +1,5 @@
 import { sizeof, concat, copy, NodeBuffer, putVarnum } from '../deps.ts'
+import { ReadonlyUint8Array } from '../types.ts'
 
 export class Encoder {
   #pos: number
@@ -44,7 +45,7 @@ export class Encoder {
     return this.#buf.subarray(pos, this.#pos)
   }
 
-  get buff(): Uint8Array {
+  get buff(): ReadonlyUint8Array {
     return this.#buf.subarray(0, this.#pos)
   }
 

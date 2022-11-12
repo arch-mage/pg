@@ -2,6 +2,18 @@ export interface FullReader {
   readFull(buff: Uint8Array): Promise<Uint8Array | null>
 }
 
+export type TypedArrayMutableProperties =
+  | 'copyWithin'
+  | 'fill'
+  | 'reverse'
+  | 'set'
+  | 'sort'
+
+export interface ReadonlyUint8Array
+  extends Omit<Uint8Array, TypedArrayMutableProperties> {
+  readonly [n: number]: number
+}
+
 export type Param = Uint8Array | null
 
 export const enum Format {
@@ -44,6 +56,10 @@ export interface AuthSASLFinal {
 }
 
 export type AuthData = AuthOk | AuthSASL | AuthSASLContinue | AuthSASLFinal
+
+export type Column = Uint8Array | null
+
+export type Row = Column[]
 
 export const enum ReadyState {
   Idle = 'I',

@@ -20,6 +20,7 @@ import {
   Format,
   Packet,
   Param,
+  ReadonlyUint8Array,
   ReadyState,
 } from '../types.ts'
 import { Decoder } from './decoder.ts'
@@ -63,6 +64,19 @@ export class Protocol implements AsyncIterableIterator<Packet> {
     }
   }
 
+  get rbuff(): ReadonlyUint8Array {
+    return this.#dec.buff
+  }
+
+  get wbuff(): ReadonlyUint8Array {
+    return this.#enc.buff
+  }
+
+  reset() {
+    this.#dec.reset()
+    this.#enc.reset()
+  }
+
   // StartupMessage (F)
   startup(user: string, options: Record<string, string> = {}): this {
     const end = this.#begin()
@@ -76,12 +90,14 @@ export class Protocol implements AsyncIterableIterator<Packet> {
     return end()
   }
 
+  // SASLInitialResponse (F)
   saslInit(mechanism: string, message: string): this {
     const end = this.#begin('p')
     this.#enc.cstr(mechanism).int32(NodeBuffer.byteLength(message)).str(message)
     return end()
   }
 
+  // SASLResponse (F)
   sasl(message: string): this {
     const end = this.#begin('p')
     this.#enc.str(message)
@@ -169,7 +185,8 @@ export class Protocol implements AsyncIterableIterator<Packet> {
   }
 
   async send() {
-    await this.#wd.write(this.#enc.buff)
+    // NOTE: write call here does not mutate array
+    await this.#wd.write(this.#enc.buff as Uint8Array)
     this.#enc.reset()
     await this.#wd.flush()
   }

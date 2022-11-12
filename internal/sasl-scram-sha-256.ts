@@ -5,8 +5,11 @@ import { AuthCode } from '../types.ts'
 import { extract, extractAuth, must } from './assert.ts'
 import { hmac256, pbkdf2, xorBuffer } from './crypto.ts'
 
-export async function sasl(proto: Protocol, password: string) {
-  const clientNonce = base64.encode(crypto.getRandomValues(new Uint8Array(18)))
+export async function sasl(
+  proto: Protocol,
+  password: string,
+  clientNonce: string
+) {
   const message = `n,,n=*,r=${clientNonce}`
   await proto.saslInit('SCRAM-SHA-256', message).send()
   const serverFirstMessage = await proto
@@ -64,8 +67,8 @@ export async function sasl(proto: Protocol, password: string) {
   )
 
   // prettier-ignore
-  const clientFInalMessage = clientFinalMessageWithoutProof + ',p=' + clientProof
-  await proto.sasl(clientFInalMessage).send()
+  const clientFinalMessage = clientFinalMessageWithoutProof + ',p=' + clientProof
+  await proto.sasl(clientFinalMessage).send()
 
   const serverFinalMessage = await proto
     .recv()

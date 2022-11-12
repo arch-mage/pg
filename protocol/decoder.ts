@@ -1,6 +1,6 @@
 import { concat, varnum } from '../deps.ts'
 import { DecodeError } from '../errors.ts'
-import { FullReader } from '../types.ts'
+import { FullReader, ReadonlyUint8Array } from '../types.ts'
 
 export class Decoder {
   #pos: number
@@ -17,7 +17,7 @@ export class Decoder {
     this.#dec = new TextDecoder()
   }
 
-  get #buf() {
+  get #sub() {
     return this.#body.subarray(0, this.#end)
   }
 
@@ -30,14 +30,18 @@ export class Decoder {
     return this
   }
 
-  #reset(): this {
+  reset(): this {
     this.#pos = 0
     this.#end = 0
     return this
   }
 
+  get buff(): ReadonlyUint8Array {
+    return this.#body.subarray(0, this.#end)
+  }
+
   int16(): number {
-    const num = varnum(this.#buf.subarray(this.#pos, this.#pos + 2), {
+    const num = varnum(this.#sub.subarray(this.#pos, this.#pos + 2), {
       dataType: 'int16',
       endian: 'big',
     })
@@ -49,7 +53,7 @@ export class Decoder {
   }
 
   int32(): number {
-    const num = varnum(this.#buf.subarray(this.#pos, this.#pos + 4), {
+    const num = varnum(this.#sub.subarray(this.#pos, this.#pos + 4), {
       dataType: 'int32',
       endian: 'big',
     })
@@ -61,7 +65,7 @@ export class Decoder {
   }
 
   bytes(size: number): Uint8Array {
-    const buff = this.#buf.subarray(this.#pos, this.#pos + size)
+    const buff = this.#sub.subarray(this.#pos, this.#pos + size)
     this.#pos += Math.min(buff.length, size)
     if (buff.length !== size) {
       throw new DecodeError(`not a buff with length of ${size}`)
@@ -70,7 +74,7 @@ export class Decoder {
   }
 
   byte(): number {
-    const byte = this.#buf.at(this.#pos++)
+    const byte = this.#sub.at(this.#pos++)
     if (typeof byte === 'number') {
       return byte
     }
@@ -78,24 +82,24 @@ export class Decoder {
   }
 
   cstr(): string {
-    const idx = this.#buf.subarray(this.#pos).indexOf(0)
+    const idx = this.#sub.subarray(this.#pos).indexOf(0)
     if (idx === -1) {
       this.#pos = this.#end
       throw new DecodeError('not cstr')
     }
-    const str = this.#dec.decode(this.#buf.subarray(this.#pos, this.#pos + idx))
+    const str = this.#dec.decode(this.#sub.subarray(this.#pos, this.#pos + idx))
     this.#pos += idx + 1
     return str
   }
 
   str(): string {
-    const idx = this.#buf.subarray(this.#pos).indexOf(0)
+    const idx = this.#sub.subarray(this.#pos).indexOf(0)
     let buf
     if (idx === -1) {
-      buf = this.#buf.subarray(this.#pos)
+      buf = this.#sub.subarray(this.#pos)
       this.#pos = this.#end
     } else {
-      buf = this.#buf.subarray(this.#pos, this.#pos + idx)
+      buf = this.#sub.subarray(this.#pos, this.#pos + idx)
       this.#pos += idx
     }
     if (buf.length === 0) {
@@ -105,7 +109,7 @@ export class Decoder {
   }
 
   async readPacket(reader: FullReader): Promise<string | null> {
-    this.#reset()
+    this.reset()
 
     if (!(await reader.readFull(this.#head).catch(wrapError))) {
       return null
@@ -118,7 +122,7 @@ export class Decoder {
       }) as number) - 4
     this.#ensure(this.#end)
 
-    if (!(await reader.readFull(this.#buf).catch(wrapError))) {
+    if (!(await reader.readFull(this.#sub).catch(wrapError))) {
       throw new DecodeError('insufficient data to read')
     }
 

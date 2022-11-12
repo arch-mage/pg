@@ -1,7 +1,7 @@
 import { Protocol } from './mod.ts'
 import { Buffer, assertEquals } from '../deps.ts'
 
-async function encode<K extends keyof Protocol>(
+async function encode<K extends keyof Omit<Protocol, 'rbuff' | 'wbuff'>>(
   method: K,
   ...args: Parameters<Protocol[K]>
 ) {
