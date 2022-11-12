@@ -1,4 +1,4 @@
-import { UnexpectedResponseError } from '../errors.ts'
+import { UnexpectedResponseCodeError } from '../errors.ts'
 import { extract, mustPacket } from '../internal/assert.ts'
 import { Protocol } from '../protocol/mod.ts'
 import { ColumnDescription } from '../types.ts'
@@ -32,7 +32,7 @@ export class QueryResult {
       this.#closed = true
       return null
     }
-    throw new UnexpectedResponseError(packet.code)
+    throw new UnexpectedResponseCodeError(packet.code)
   }
 
   async fetchall(): Promise<Array<Uint8Array | null>[] | null> {

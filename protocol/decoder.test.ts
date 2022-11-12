@@ -1,5 +1,4 @@
 import {
-  PartialReadError,
   Buffer,
   BufReader,
   putVarnum,
@@ -8,7 +7,7 @@ import {
   assertThrows,
 } from '../deps.ts'
 import { Decoder } from './decoder.ts'
-import { ProtocolError } from '../errors.ts'
+import { DecodeError } from '../errors.ts'
 
 async function init(code: string, buff: number[]) {
   const head = new Uint8Array(5)
@@ -25,7 +24,7 @@ Deno.test('insufficient', async () => {
   const buff = new Buffer([0x41, 0x00, 0x00, 0x00, 0x10])
   await assertRejects(
     () => dec.readPacket(new BufReader(buff)),
-    ProtocolError,
+    DecodeError,
     'insufficient data to read'
   )
 })
@@ -33,48 +32,45 @@ Deno.test('insufficient', async () => {
 Deno.test('partial read', async () => {
   const dec = new Decoder(2)
   const buff = new Buffer([0x41, 0x00, 0x00, 0x00, 0x10, 0x00])
-  await assertRejects(
-    () => dec.readPacket(new BufReader(buff)),
-    PartialReadError
-  )
+  await assertRejects(() => dec.readPacket(new BufReader(buff)), DecodeError)
 })
 
 Deno.test('int16', async () => {
   const dec = await init('A', [0x00, 0x01, 0x00])
   assertEquals(dec.int16(), 1)
-  assertThrows(() => dec.int16(), ProtocolError, 'not int16')
+  assertThrows(() => dec.int16(), DecodeError, 'not int16')
 })
 
 Deno.test('int32', async () => {
   const dec = await init('A', [0x00, 0x00, 0x00, 0x01, 0x00])
   assertEquals(dec.int32(), 1)
-  assertThrows(() => dec.int32(), ProtocolError, 'not int32')
+  assertThrows(() => dec.int32(), DecodeError, 'not int32')
 })
 
 Deno.test('bytes', async () => {
   const dec = await init('A', [0x00, 0x00, 0x00])
   assertEquals(dec.bytes(2), new Uint8Array([0x00, 0x00]))
-  assertThrows(() => dec.bytes(2), ProtocolError, 'not a buff with length of 2')
+  assertThrows(() => dec.bytes(2), DecodeError, 'not a buff with length of 2')
 })
 
 Deno.test('byte', async () => {
   const dec = await init('A', [0x00])
   assertEquals(dec.byte(), 0)
-  assertThrows(() => dec.byte(), ProtocolError, 'not byte')
+  assertThrows(() => dec.byte(), DecodeError, 'not byte')
 })
 
 Deno.test('cstr', async () => {
   const dec = await init('A', [0x00, 0x41, 0x00, 0x42])
   assertEquals(dec.cstr(), '')
   assertEquals(dec.cstr(), 'A')
-  assertThrows(() => dec.cstr(), ProtocolError, 'not cstr')
+  assertThrows(() => dec.cstr(), DecodeError, 'not cstr')
 })
 
 Deno.test('str', async () => {
   const dec = await init('A', [0x41, 0x00, 0x42, 0x43])
   assertEquals(dec.str(), 'A')
-  assertThrows(() => dec.str(), ProtocolError, 'empty string')
+  assertThrows(() => dec.str(), DecodeError, 'empty string')
   dec.byte()
   assertEquals(dec.str(), 'BC')
-  assertThrows(() => dec.str(), ProtocolError, 'empty string')
+  assertThrows(() => dec.str(), DecodeError, 'empty string')
 })

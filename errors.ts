@@ -1,69 +1,95 @@
-import { AuthCode, ErrorResponse } from './types.ts'
+import { AuthCode, ErrorField } from './types.ts'
 
 export class ProtocolError extends Error {
-  constructor(message: string) {
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause })
+    this.name = this.constructor.name
+  }
+}
+
+export class EncodeError extends ProtocolError {
+  constructor(message: string, cause?: unknown) {
+    super(message, cause)
+  }
+}
+
+export class DecodeError extends ProtocolError {
+  constructor(message: string, cause?: unknown) {
+    super(message, cause)
+  }
+}
+
+export class UnrecognizedFormatCodeError extends DecodeError {
+  readonly format: number
+
+  constructor(format: number) {
+    super(`unrecognized format code: ${format}`)
+    this.format = format
+  }
+}
+
+export class UnrecognizedReadyStateError extends DecodeError {
+  readonly readyState: string
+
+  constructor(readyState: string) {
+    super(`unrecognized ready state: ${readyState}`)
+    this.readyState = readyState
+  }
+}
+
+export class UnrecognizedResponseError extends DecodeError {
+  readonly received: string
+
+  constructor(received: string) {
+    super(`unrecognized server response: ${received}`)
+    this.received = received
+  }
+}
+
+export class UnexpectedResponseCodeError extends DecodeError {
+  readonly received: string
+  readonly expected?: string
+
+  constructor(received: string, expected?: string) {
+    const message =
+      typeof expected === 'string'
+        ? `unexpected server response: ${received}. expected: ${expected}`
+        : `unexpected server response: ${received}`
     super(message)
-    Object.setPrototypeOf(this, ProtocolError.prototype)
-    this.name = 'ProtocolError'
+    this.name = 'UnexpectedResponseError'
+    this.received = received
+    if (typeof expected === 'string') {
+      this.expected = expected
+    }
+  }
+}
+
+export class UnexpectedAuthCodeError extends DecodeError {
+  readonly received: AuthCode
+  readonly expected?: AuthCode
+
+  constructor(received: AuthCode, expected?: AuthCode) {
+    const message =
+      typeof expected === 'string'
+        ? `unexpected auth response: ${received}. expected: ${expected}`
+        : `unexpected auth response: ${received}`
+    super(message)
+    this.name = 'UnexpectedAuthError'
+    this.received = received
+    this.expected = expected
   }
 }
 
 export class SASLError extends ProtocolError {
   constructor(message: string) {
     super(message)
-    Object.setPrototypeOf(this, SASLError.prototype)
-    this.name = 'SASLError'
-  }
-}
-
-export class UnrecognizedResponseError extends ProtocolError {
-  readonly received: string
-
-  constructor(received: string) {
-    super(`unrecognized server response: ${received}`)
-    Object.setPrototypeOf(this, UnrecognizedResponseError.prototype)
-    this.name = 'UnrecognizedResponseError'
-    this.received = received
   }
 }
 
 export class ConnectionClosedError extends ProtocolError {
   constructor() {
     super('no data: connection closed')
-    Object.setPrototypeOf(this, UnrecognizedResponseError.prototype)
     this.name = 'UnrecognizedResponseError'
-  }
-}
-
-export class UnexpectedResponseError extends ProtocolError {
-  readonly received: string | null
-  readonly expected: string | null
-
-  constructor(received: string | null, expected?: string) {
-    const code = typeof received === 'string' ? received : 'null'
-    const message =
-      typeof expected === 'string'
-        ? `unexpected server response: ${code}. expected: ${expected}`
-        : `unexpected server response: ${code}`
-    super(message)
-    Object.setPrototypeOf(this, UnexpectedResponseError.prototype)
-    this.name = 'UnexpectedResponseError'
-    this.received = received
-    this.expected = expected ?? null
-  }
-}
-
-export class UnexpectedAuthError extends ProtocolError {
-  readonly received: AuthCode
-  readonly expected: AuthCode
-
-  constructor(received: AuthCode, expected: AuthCode) {
-    const message = `unexpected auth response: ${received}. expected: ${expected}`
-    super(message)
-    Object.setPrototypeOf(this, UnexpectedAuthError.prototype)
-    this.name = 'UnexpectedAuthError'
-    this.received = received
-    this.expected = expected
   }
 }
 
@@ -86,9 +112,8 @@ export class PostgresError extends Error {
   readonly line?: string
   readonly routine?: string
 
-  constructor(packet: ErrorResponse['data']) {
+  constructor(packet: ErrorField) {
     super()
-    Object.setPrototypeOf(this, PostgresError.prototype)
     this.name = 'PostgresError'
     this.code = packet.C
     this.message = packet.M

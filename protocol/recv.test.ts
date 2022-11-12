@@ -1,13 +1,7 @@
-import {
-  Buffer,
-  PartialReadError,
-  concat,
-  assertEquals,
-  assertRejects,
-} from '../deps.ts'
+import { Buffer, concat, assertEquals, assertRejects } from '../deps.ts'
 import { AuthCode, ReadyState } from '../types.ts'
 import { Protocol } from './mod.ts'
-import { ProtocolError } from '../errors.ts'
+import { DecodeError, UnrecognizedResponseError } from '../errors.ts'
 
 function buffer(...source: Array<string | number | number[]>) {
   return new Buffer(
@@ -31,12 +25,12 @@ Deno.test('insufficient data', async () => {
   assertEquals(await decode(buffer()), null)
   await assertRejects(
     () => decode(buffer('X', [0, 0])),
-    PartialReadError,
+    DecodeError,
     'Encountered UnexpectedEof, data only partially read'
   )
   await assertRejects(
     () => decode(buffer('X', [0, 0, 0, 5])),
-    ProtocolError,
+    DecodeError,
     'insufficient data to read'
   )
 })
@@ -44,7 +38,7 @@ Deno.test('insufficient data', async () => {
 Deno.test('unrecognized', async () => {
   await assertRejects(
     () => decode(buffer('.', [0, 0, 0, 4])),
-    ProtocolError,
+    UnrecognizedResponseError,
     'unrecognized server response: .'
   )
 })
@@ -99,7 +93,7 @@ Deno.test('authentication', async () => {
 Deno.test('parameterStatus', async () => {
   assertRejects(
     () => decode(buffer('S', [0, 0, 0, 12], 'app', [0], 'name')),
-    ProtocolError,
+    DecodeError,
     'not cstr'
   )
   assertEquals(
@@ -111,7 +105,7 @@ Deno.test('parameterStatus', async () => {
 Deno.test('backendKeyData', async () => {
   assertRejects(
     () => decode(buffer('K', [0, 0, 0, 11], [0, 0, 0, 1], [0, 0, 0])),
-    ProtocolError,
+    DecodeError,
     'not int32'
   )
   assertEquals(
@@ -257,7 +251,7 @@ Deno.test('rowDescription', async () => {
 Deno.test('parameterDescription', async () => {
   assertRejects(
     () => decode(buffer('t', [0, 0, 0, 5], [0])),
-    ProtocolError,
+    DecodeError,
     'not int16'
   )
   assertEquals(await decode(buffer('t', [0, 0, 0, 10], [0, 1], [0, 0, 0, 1])), {

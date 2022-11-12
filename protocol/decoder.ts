@@ -1,5 +1,5 @@
 import { concat, varnum } from '../deps.ts'
-import { ProtocolError } from '../errors.ts'
+import { DecodeError } from '../errors.ts'
 import { FullReader } from '../types.ts'
 
 export class Decoder {
@@ -45,7 +45,7 @@ export class Decoder {
     if (typeof num === 'number') {
       return num
     }
-    throw new ProtocolError('not int16')
+    throw new DecodeError('not int16')
   }
 
   int32(): number {
@@ -57,14 +57,14 @@ export class Decoder {
     if (typeof num === 'number') {
       return num
     }
-    throw new ProtocolError('not int32')
+    throw new DecodeError('not int32')
   }
 
   bytes(size: number): Uint8Array {
     const buff = this.#buf.subarray(this.#pos, this.#pos + size)
     this.#pos += Math.min(buff.length, size)
     if (buff.length !== size) {
-      throw new ProtocolError(`not a buff with length of ${size}`)
+      throw new DecodeError(`not a buff with length of ${size}`)
     }
     return buff
   }
@@ -74,14 +74,14 @@ export class Decoder {
     if (typeof byte === 'number') {
       return byte
     }
-    throw new ProtocolError('not byte')
+    throw new DecodeError('not byte')
   }
 
   cstr(): string {
     const idx = this.#buf.subarray(this.#pos).indexOf(0)
     if (idx === -1) {
       this.#pos = this.#end
-      throw new ProtocolError('not cstr')
+      throw new DecodeError('not cstr')
     }
     const str = this.#dec.decode(this.#buf.subarray(this.#pos, this.#pos + idx))
     this.#pos += idx + 1
@@ -99,7 +99,7 @@ export class Decoder {
       this.#pos += idx
     }
     if (buf.length === 0) {
-      throw new ProtocolError('empty string')
+      throw new DecodeError('empty string')
     }
     return this.#dec.decode(buf)
   }
@@ -107,7 +107,7 @@ export class Decoder {
   async readPacket(reader: FullReader): Promise<string | null> {
     this.#reset()
 
-    if (!(await reader.readFull(this.#head))) {
+    if (!(await reader.readFull(this.#head).catch(wrapError))) {
       return null
     }
     const code = String.fromCharCode(this.#head[0])
@@ -118,10 +118,14 @@ export class Decoder {
       }) as number) - 4
     this.#ensure(this.#end)
 
-    if (!(await reader.readFull(this.#buf))) {
-      throw new ProtocolError('insufficient data to read')
+    if (!(await reader.readFull(this.#buf).catch(wrapError))) {
+      throw new DecodeError('insufficient data to read')
     }
 
     return code
   }
+}
+
+function wrapError(error: Error) {
+  throw new DecodeError(error.message, error)
 }

@@ -1,6 +1,9 @@
-import { UnexpectedAuthError, UnexpectedResponseError } from '../errors.ts'
+import {
+  UnexpectedAuthCodeError,
+  UnexpectedResponseCodeError,
+} from '../errors.ts'
 import { Protocol } from '../protocol/mod.ts'
-import { Param } from '../types.ts'
+import { AuthCode, Param } from '../types.ts'
 import { mustPacket, extract } from '../internal/assert.ts'
 import { QueryResult } from './result.ts'
 import { sasl } from '../internal/sasl-scram-sha-256.ts'
@@ -44,7 +47,7 @@ export class Conn {
     } else if (auth.code === 0) {
       /* empty */
     } else {
-      throw new UnexpectedAuthError(auth.code, 0)
+      throw new UnexpectedAuthCodeError(auth.code, AuthCode.Ok)
     }
 
     for await (const packet of this.#proto) {
@@ -93,6 +96,6 @@ export class Conn {
       return new QueryResult(this.#proto, packet.data)
     }
 
-    throw new UnexpectedResponseError(packet.code)
+    throw new UnexpectedResponseCodeError(packet.code)
   }
 }

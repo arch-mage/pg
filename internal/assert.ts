@@ -1,8 +1,8 @@
 import {
   ConnectionClosedError,
   PostgresError,
-  UnexpectedAuthError,
-  UnexpectedResponseError,
+  UnexpectedAuthCodeError,
+  UnexpectedResponseCodeError,
 } from '../errors.ts'
 import {
   AuthCode,
@@ -94,7 +94,7 @@ export function extract(code: string, packet?: Packet | null): unknown {
     if (packet.code === code) {
       return packet.data
     }
-    throw new UnexpectedResponseError(packet?.code ?? null, code)
+    throw new UnexpectedResponseCodeError(packet.code, code)
   }
   return typeof packet !== 'undefined' ? assert(packet) : assert
 }
@@ -116,7 +116,7 @@ export function extractAuth(code: AuthCode, data?: AuthData): unknown {
     if (data.code === code) {
       return data.data
     }
-    throw new UnexpectedAuthError(data.code, code)
+    throw new UnexpectedAuthCodeError(data.code, code)
   }
   return typeof data === 'undefined' ? assert : assert(data)
 }

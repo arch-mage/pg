@@ -6,7 +6,12 @@ import {
   BufWriter,
   NodeBuffer,
 } from '../deps.ts'
-import { ProtocolError, UnrecognizedResponseError } from '../errors.ts'
+import {
+  UnexpectedAuthCodeError,
+  UnrecognizedFormatCodeError,
+  UnrecognizedReadyStateError,
+  UnrecognizedResponseError,
+} from '../errors.ts'
 import {
   AuthCode,
   AuthData,
@@ -292,7 +297,7 @@ function rowDescription(dec: Decoder): ColumnDescription[] {
     const typemod = dec.int32()
     const format = dec.int16() as 0 | 1
     if (format !== 0 && format !== 1) {
-      throw new ProtocolError(`invalid format code: ${format}`)
+      throw new UnrecognizedFormatCodeError(format)
     }
     columns.push({
       name,
@@ -324,7 +329,7 @@ function readyForQuery(dec: Decoder): ReadyState {
   if (code === 'I') return ReadyState.Idle
   if (code === 'T') return ReadyState.Transaction
   if (code === 'E') return ReadyState.Error
-  throw new ProtocolError(`unrecognized ready state: ${code}`)
+  throw new UnrecognizedReadyStateError(code)
 }
 
 // AuthenticationCleartextPassword (B)
@@ -359,7 +364,7 @@ function authentication(dec: Decoder): AuthData {
   if (code === 12) {
     return { code: AuthCode.SASLFinal, data: dec.str() }
   }
-  throw new ProtocolError(`unrecognized authentication response: ${code}`)
+  throw new UnexpectedAuthCodeError(code)
 }
 
 // CopyBothResponse (B)
