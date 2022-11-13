@@ -56,7 +56,6 @@ export class UnexpectedResponseError extends DecodeError {
         ? `unexpected server response: ${received.code}. expected: ${expected}`
         : `unexpected server response: ${received.code}`
     super(message)
-    this.name = 'UnexpectedResponseError'
     this.received = received
     if (typeof expected === 'string') {
       this.expected = expected
@@ -74,9 +73,19 @@ export class UnexpectedAuthCodeError extends DecodeError {
         ? `unexpected auth response: ${received}. expected: ${expected}`
         : `unexpected auth response: ${received}`
     super(message)
-    this.name = 'UnexpectedAuthError'
     this.received = received
     this.expected = expected
+  }
+}
+
+export class ParserNotImplemented extends DecodeError {
+  readonly oid: number
+  readonly mode: 'text' | 'binary'
+  constructor(mode: 'text' | 'binary', oid: number, cause?: unknown) {
+    const message = `${mode} parser is not implemented for type ${oid}`
+    super(message, cause)
+    this.oid = oid
+    this.mode = mode
   }
 }
 
@@ -89,7 +98,6 @@ export class SASLError extends ProtocolError {
 export class ConnectionClosedError extends ProtocolError {
   constructor() {
     super('no data: connection closed')
-    this.name = 'UnrecognizedResponseError'
   }
 }
 
@@ -114,7 +122,6 @@ export class PostgresError extends Error {
 
   constructor(packet: MessageFields) {
     super()
-    this.name = 'PostgresError'
     this.code = packet.C
     this.message = packet.M
     this.severity = packet.V ?? packet.S

@@ -115,6 +115,11 @@ export class Conn {
   }
 
   query(query: string, params: Param[] = []): Task {
+    if (
+      params.some((param) => param !== null && !(param instanceof Uint8Array))
+    ) {
+      throw TypeError(`invalid parameter type`)
+    }
     const entry = this.#queue.shift() ?? Promise.resolve()
     const task = new Task(this.#proto, query, params, entry)
     this.#queue.push(new Promise(task.onClose.bind(task)))

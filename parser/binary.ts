@@ -1,8 +1,7 @@
 import { varnum, varbig } from '../deps.ts'
+import { ParserNotImplemented } from '../errors.ts'
 
-type Value = string | boolean | number | Date | bigint | Uint8Array
-
-type Parser = (value: Uint8Array) => Value
+type Parser = (value: Uint8Array) => unknown
 
 export function int2(value: Uint8Array): number {
   return varnum(value, { endian: 'big', dataType: 'int16' }) as number
@@ -139,6 +138,16 @@ export function numeric(
     : numericN(value.subarray(8, 8 + digits * 2), digits, weight, sign)
 }
 
+export function json(value: Uint8Array): unknown {
+  const dec = new TextDecoder()
+  return JSON.parse(dec.decode(value))
+}
+
+export function jsonb(value: Uint8Array): unknown {
+  const dec = new TextDecoder()
+  return JSON.parse(dec.decode(value.subarray(1)))
+}
+
 export const parsers = new Map<number, Parser>([
   [16, bool],
   [18, char],
@@ -149,18 +158,20 @@ export const parsers = new Map<number, Parser>([
   [24, oid], // regproc
   [25, text],
   [26, oid],
+  [114, json],
   [1114, timestamp], // timestamp
   [1184, timestamp], // timestamptz
   [1700, numeric],
+  [3802, jsonb],
 ])
 
-export function parse(oid: number, raw: Uint8Array | null): Value | null {
+export function parse(oid: number, raw: Uint8Array | null): unknown {
   if (!raw) {
     return raw
   }
   const parser = parsers.get(oid)
   if (!parser) {
-    throw new TypeError(`not implemented: oid ${oid}`)
+    throw new ParserNotImplemented('binary', oid)
   }
   return parser(raw)
 }

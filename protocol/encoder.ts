@@ -28,7 +28,9 @@ export class Encoder {
     const size = sizeof(dataType)
     this.#ensure(size)
     const array = this.#buf.subarray(this.#pos, this.#pos + size)
-    putVarnum(array, num, { endian: 'big', dataType })
+    if (putVarnum(array, num, { endian: 'big', dataType }) !== size) {
+      throw new TypeError(`could not encode ${num} as ${dataType}`)
+    }
     this.#pos += size
     return this
   }

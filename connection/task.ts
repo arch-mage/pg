@@ -73,7 +73,7 @@ export class Task
     const { query, params } = this.#state
     this.#state = { code: TaskStateCode.Initializing }
 
-    this.#proto
+    await this.#proto
       .encode({ code: 'P', data: { name: '', query, formats: [] } })
       .encode({
         code: 'B',
