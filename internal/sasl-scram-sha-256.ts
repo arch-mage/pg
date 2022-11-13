@@ -9,12 +9,7 @@ export async function sasl(
   password: string,
   clientNonce: string
 ) {
-  await proto
-    .encode({
-      code: 'p',
-      data: encodeInit(clientNonce),
-    })
-    .send()
+  await proto.encode({ code: 'p', data: encodeInit(clientNonce) }).send()
   const serverFirstMessage = await proto
     .recv()
     .then(extract('R'))
@@ -71,12 +66,7 @@ export async function sasl(
 
   // prettier-ignore
   const clientFinalMessage = clientFinalMessageWithoutProof + ',p=' + clientProof
-  await proto
-    .encode({
-      code: 'p',
-      data: enc.encode(clientFinalMessage),
-    })
-    .send()
+  await proto.encode({ code: 'p', data: enc.encode(clientFinalMessage) }).send()
 
   const serverFinalMessage = await proto
     .recv()
@@ -91,11 +81,12 @@ export async function sasl(
 }
 
 function encodeInit(nonce: string): Uint8Array {
+  const msg = `n,,n=*,r=${nonce}`
   const enc = new TextEncoder()
-  const len = NodeBuffer.byteLength(nonce)
+  const len = NodeBuffer.byteLength(msg)
   const buff = new Uint8Array(14 + 4 + len)
   enc.encodeInto('SCRAM-SHA-256', buff)
   putVarnum(buff.subarray(14, 18), len)
-  enc.encodeInto(nonce, buff.subarray(18))
+  enc.encodeInto(msg, buff.subarray(18))
   return buff
 }

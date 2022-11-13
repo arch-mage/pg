@@ -9,24 +9,53 @@ import { FilteredProtocol } from './filtered-proto.ts'
 
 export interface Options {
   user: string
-  host?: string
-  port?: number
   database?: string
   password?: string
   nonce?: string // for testing
   params?: Record<string, string>
 }
 
+export interface ConnectOptions extends Options {
+  host?: string
+  port?: number
+  ssl?: boolean
+}
+
 export class Conn {
   readonly #proto: FilteredProtocol
   readonly #queue: Promise<void>[]
 
-  static async connect(opts: Options): Promise<Conn> {
+  static async connect({
+    host,
+    port,
+    ssl,
+    ...opts
+  }: ConnectOptions): Promise<Conn> {
+    port = port ?? 5432
+    host = host ?? 'localhost'
     const conn = await Deno.connect({
-      port: opts.port ?? 5432,
-      hostname: opts.host,
+      port: port ?? 5432,
+      hostname: host,
     })
-    return Conn.fromConn(conn, opts)
+
+    if (!ssl) {
+      return Conn.fromConn(conn, opts)
+    }
+
+    await conn.write(new Uint8Array([0, 0, 0, 8, 4, 210, 22, 47]))
+
+    const buff = new Uint8Array(1)
+    await conn.read(buff)
+
+    if (buff[0] === 78) {
+      return Conn.fromConn(conn, opts)
+    }
+
+    if (buff[0] === 83) {
+      const tlsConn = await Deno.startTls(conn, { hostname: host })
+      return Conn.fromConn(tlsConn, opts)
+    }
+    throw new Error(`invalid ssl response: ${buff[0]}`)
   }
 
   static fromConn(conn: Reader & Writer, opts: Options): Promise<Conn> {

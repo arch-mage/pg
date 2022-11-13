@@ -34,7 +34,7 @@ export type TaskState = TaskFresh | TaskInitializing | TaskRunning | TaskClosed
 export class Task
   implements
     PromiseLike<[Row[], ColumnDescription[]] | null>,
-    AsyncIterableIterator<[Row, ColumnDescription[]] | null>
+    AsyncIterableIterator<[Row, ColumnDescription[]]>
 {
   readonly #proto: IProtocol
   readonly #listeners: Array<() => void>
@@ -224,9 +224,7 @@ export class Task
     return this
   }
 
-  async next(): Promise<
-    IteratorResult<[Row, ColumnDescription[]] | null, null>
-  > {
+  async next(): Promise<IteratorResult<[Row, ColumnDescription[]], null>> {
     const value = await this.#fetchone()
     return value ? { done: false, value } : { done: true, value }
   }
