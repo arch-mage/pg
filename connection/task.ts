@@ -26,7 +26,7 @@ export interface TaskRunning {
 
 export interface TaskClosed {
   code: TaskStateCode.Closed
-  error?: Error
+  error?: unknown
 }
 
 export type TaskState = TaskFresh | TaskInitializing | TaskRunning | TaskClosed
@@ -54,7 +54,12 @@ export class Task
     this.#turn = turn
   }
 
-  #close(error?: Error) {
+  #close(error?: unknown) {
+    if (this.#state.code === TaskStateCode.Closed) {
+      // the first error wins
+      this.#state.error ??= error
+      return this.#state
+    }
     this.#state = { code: TaskStateCode.Closed, error }
     this.#listeners.forEach((fn) => fn())
     return this.#state
@@ -69,10 +74,7 @@ export class Task
     this.#state = { code: TaskStateCode.Initializing }
 
     this.#proto
-      .encode({
-        code: 'P',
-        data: { name: '', query, formats: [] },
-      })
+      .encode({ code: 'P', data: { name: '', query, formats: [] } })
       .encode({
         code: 'B',
         data: {
@@ -83,21 +85,10 @@ export class Task
           resultFormats: [1],
         },
       })
-      .encode({
-        code: 'D',
-        data: { kind: 'P', name: '' },
-      })
-      .encode({
-        code: 'E',
-        data: { name: '', max: 0 },
-      })
-      .encode({
-        code: 'C',
-        data: { kind: 'P', name: '' },
-      })
-      .encode({
-        code: 'S',
-      })
+      .encode({ code: 'D', data: { kind: 'P', name: '' } })
+      .encode({ code: 'E', data: { name: '', max: 0 } })
+      .encode({ code: 'C', data: { kind: 'P', name: '' } })
+      .encode({ code: 'S' })
       .send()
 
     await this.#proto.recv().then(extract('1'))
@@ -227,5 +218,28 @@ export class Task
   async next(): Promise<IteratorResult<[Row, ColumnDescription[]], null>> {
     const value = await this.#fetchone()
     return value ? { done: false, value } : { done: true, value }
+  }
+
+  async return(): Promise<IteratorResult<[Row, ColumnDescription[]], null>> {
+    // exhaust the iterator
+    for (;;) {
+      const value = await this.#fetchone() // fetchone handles calling #close
+      if (!value) {
+        return { done: true, value }
+      }
+    }
+  }
+
+  async throw(
+    error?: unknown
+  ): Promise<IteratorResult<[Row, ColumnDescription[]], null>> {
+    // exhaust the iterator
+    for (;;) {
+      const value = await this.#fetchone() // fetchone handles calling #close
+      if (!value) {
+        this.#close(error)
+        return { done: true, value }
+      }
+    }
   }
 }
