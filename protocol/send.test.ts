@@ -1,6 +1,6 @@
 import { Protocol } from './mod.ts'
 import { Buffer } from '../deps.ts'
-import { assertEquals } from '../testing.ts'
+import { assertEquals, assertRejects } from '../testing.ts'
 import { FrontendPacket } from '../types.ts'
 
 async function encode(packet: FrontendPacket) {
@@ -9,6 +9,12 @@ async function encode(packet: FrontendPacket) {
   await proto.encode(packet).send()
   return buff.bytes()
 }
+
+Deno.test('invliad', async () => {
+  // deno-lint-ignore no-explicit-any
+  const packet: any = { code: '.', data: null }
+  await assertRejects(() => encode(packet))
+})
 
 Deno.test('startup', async () => {
   const expect = new Uint8Array([
@@ -36,12 +42,13 @@ Deno.test('terminate', async () => {
 
 Deno.test('parse', async () => {
   const expect = new Uint8Array([
-    80, 0, 0, 0, 18, 115, 116, 109, 116, 0, 83, 69, 76, 69, 67, 84, 0, 0, 0,
+    80, 0, 0, 0, 20, 115, 116, 109, 116, 0, 83, 69, 76, 69, 67, 84, 0, 0, 1, 0,
+    1,
   ])
   assertEquals(
     await encode({
       code: 'P',
-      data: { name: 'stmt', query: 'SELECT', formats: [] },
+      data: { name: 'stmt', query: 'SELECT', formats: [1] },
     }),
     expect
   )

@@ -29,6 +29,14 @@ Deno.test('partial read', async () => {
   await assertRejects(() => dec.readPacket(new BufReader(buff)), DecodeError)
 })
 
+Deno.test('buff', async () => {
+  const dec = new Decoder()
+  const buff = new Buffer([0x41, 0x00, 0x00, 0x00, 0x05, 0x01])
+  await dec.readPacket(new BufReader(buff))
+
+  assertEquals([...dec.buff], [0x01])
+})
+
 Deno.test('int16', async () => {
   const dec = await init('A', [0x00, 0x01, 0x00])
   assertEquals(dec.int16(), 1)

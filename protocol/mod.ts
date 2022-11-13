@@ -10,7 +10,6 @@ import {
   ColumnDescription,
   FrontendPacket,
   BackendPacket,
-  ReadonlyUint8Array,
   ReadyState,
   IProtocol,
 } from '../types.ts'
@@ -53,19 +52,6 @@ export class Protocol implements IProtocol {
       })
       return this
     }
-  }
-
-  get rbuff(): ReadonlyUint8Array {
-    return this.#dec.buff
-  }
-
-  get wbuff(): ReadonlyUint8Array {
-    return this.#enc.buff
-  }
-
-  reset() {
-    this.#dec.reset()
-    this.#enc.reset()
   }
 
   encode(packet: FrontendPacket): this {

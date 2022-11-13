@@ -8,9 +8,9 @@ import {
   AuthCode,
   AuthData,
   ColumnDescription,
-  ErrorResponse,
   BackendPacket,
   ReadyState,
+  MessageFields,
 } from '../types.ts'
 
 export function mustPacket(packet: BackendPacket | null): BackendPacket {
@@ -50,10 +50,10 @@ export function extract(
   code: 'D'
 ): (packet: BackendPacket | null) => Array<Uint8Array | null>
 
-export function extract(code: 'E', packet: BackendPacket | null): ErrorResponse
+export function extract(code: 'E', packet: BackendPacket | null): MessageFields
 export function extract(
   code: 'E'
-): (packet: BackendPacket | null) => ErrorResponse
+): (packet: BackendPacket | null) => MessageFields
 
 export function extract(
   code: 'K',

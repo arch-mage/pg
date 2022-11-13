@@ -38,7 +38,7 @@ export function xorBuffer(a: Uint8Array, b: Uint8Array) {
     throw new TypeError('mismatch array length')
   }
   if (a.length === 0) {
-    new TypeError('empty array')
+    throw new TypeError('empty array')
   }
 
   const c = new Uint8Array(a.length)
