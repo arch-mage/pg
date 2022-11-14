@@ -1,5 +1,6 @@
-import { putVarnum, base64, NodeBuffer } from '../deps.ts'
+import { putVarnum, base64 } from '../deps.ts'
 import { SASLError } from '../errors.ts'
+import { Encoder } from '../protocol/encoder.ts'
 import { Protocol } from '../types.ts'
 import { extract, extractAuth, must } from './assert.ts'
 import { hmac256, pbkdf2, xorBuffer } from './crypto.ts'
@@ -81,12 +82,11 @@ export async function sasl(
 }
 
 function encodeInit(nonce: string): Uint8Array {
-  const msg = `n,,n=*,r=${nonce}`
-  const enc = new TextEncoder()
-  const len = NodeBuffer.byteLength(msg)
-  const buff = new Uint8Array(14 + 4 + len)
-  enc.encodeInto('SCRAM-SHA-256', buff)
-  putVarnum(buff.subarray(14, 18), len)
-  enc.encodeInto(msg, buff.subarray(18))
-  return buff
+  const enc = new Encoder()
+  enc.cstr('SCRAM-SHA-256')
+  const size = enc.alloc(4)
+  const pos = enc.pos
+  enc.str(`n,,n=*,r=${nonce}`)
+  putVarnum(size, enc.pos - pos)
+  return enc.buff
 }

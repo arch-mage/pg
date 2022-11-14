@@ -1,28 +1,28 @@
-import { Reader, Writer, BufReader, BufWriter } from '../deps.ts'
 import { FrontendPacket, BackendPacket, Protocol } from '../types.ts'
 import { PacketEncoder } from './encoder.ts'
 import { PacketDecoder } from './decoder.ts'
+import { isFlusher } from '../internal/utils.ts'
 
 export class ReadWriteProtocol implements Protocol {
   #enc: PacketEncoder
   #dec: PacketDecoder
-  #rd: BufReader
-  #wd: BufWriter
+  #rd: Deno.Reader
+  #wd: Deno.Writer
   #closed: boolean
 
-  static fromPair(reader: Reader, writer: Writer, size = 4096) {
+  static fromPair(reader: Deno.Reader, writer: Deno.Writer, size = 4096) {
     return new ReadWriteProtocol(reader, writer, size)
   }
 
-  static fromConn(conn: Reader & Writer, size = 4096) {
+  static fromConn(conn: Deno.Reader & Deno.Writer, size = 4096) {
     return new ReadWriteProtocol(conn, conn, size)
   }
 
-  constructor(reader: Reader, writer: Writer, size = 4096) {
+  constructor(reader: Deno.Reader, writer: Deno.Writer, size = 4096) {
     this.#enc = new PacketEncoder(size)
     this.#dec = new PacketDecoder()
-    this.#rd = BufReader.create(reader, size)
-    this.#wd = BufWriter.create(writer, size)
+    this.#rd = reader
+    this.#wd = writer
     this.#closed = false
   }
 
@@ -32,7 +32,10 @@ export class ReadWriteProtocol implements Protocol {
       this.#enc.encode(packet)
     }
     await this.#wd.write(this.#enc.buff as Uint8Array)
-    await this.#wd.flush()
+
+    if (isFlusher(this.#wd)) {
+      await this.#wd.flush()
+    }
   }
 
   async recv(): Promise<BackendPacket | null> {

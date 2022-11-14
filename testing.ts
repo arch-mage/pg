@@ -1,6 +1,7 @@
-import { Buffer, concat, Reader, Writer } from './deps.ts'
+import { concat } from './deps.ts'
+import { Buffer } from 'https://deno.land/std@0.163.0/io/mod.ts'
 
-export class TestBuffer implements Reader, Writer {
+export class TestBuffer implements Deno.Reader, Deno.Writer {
   reader: Buffer
   writer: Buffer
 

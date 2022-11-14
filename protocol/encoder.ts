@@ -1,4 +1,4 @@
-import { sizeof, concat, copy, NodeBuffer, putVarnum } from '../deps.ts'
+import { sizeof, concat, copy, putVarnum } from '../deps.ts'
 import { FrontendPacket } from '../types.ts'
 
 export class Encoder {
@@ -79,20 +79,17 @@ export class Encoder {
   }
 
   str(ch: string): this {
-    const len = NodeBuffer.byteLength(ch)
-    this.ensure(len)
-    this.#enc.encodeInto(ch, this.#buf.subarray(this.#pos, this.#pos + len))
-    this.#pos += len
+    this.ensure(ch.length * 3)
+    const res = this.#enc.encodeInto(ch, this.#buf.subarray(this.#pos))
+    this.#pos += res.written
     return this
   }
 
   cstr(ch: string): this {
-    const len = NodeBuffer.byteLength(ch)
-    this.ensure(len + 1)
-    this.#enc.encodeInto(ch, this.#buf.subarray(this.#pos, this.#pos + len))
-    this.#pos += len
-    this.#buf[this.#pos] = 0
-    this.#pos += 1
+    this.ensure(ch.length * 3)
+    const res = this.#enc.encodeInto(ch, this.#buf.subarray(this.#pos))
+    this.#pos += res.written
+    this.#buf[this.#pos++] = 0
     return this
   }
 }

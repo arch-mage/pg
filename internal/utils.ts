@@ -1,7 +1,3 @@
-import { varnum } from '../deps.ts'
-import { DecodeError } from '../errors.ts'
-import { FullReader } from '../types.ts'
-
 export function* zip<A, B>(
   iterableA: Iterable<A>,
   iterableB: Iterable<B>
@@ -21,28 +17,17 @@ export function* zip<A, B>(
   }
 }
 
-export async function readPacket(
-  reader: FullReader
-): Promise<readonly [string, Uint8Array] | null> {
-  const head = new Uint8Array(5)
-  if (!(await reader.readFull(head).catch(wrapError))) {
-    return null
-  }
-  const code = String.fromCharCode(head[0])
-  const len =
-    (varnum(head.subarray(1, 5), {
-      endian: 'big',
-      dataType: 'int32',
-    }) as number) - 4
-
-  const body = new Uint8Array(len)
-  if (!(await reader.readFull(body).catch(wrapError))) {
-    throw new DecodeError('insufficient data to read')
-  }
-
-  return [code, body] as const
+export function hasProp<P extends string | number | symbol>(
+  prop: P,
+  value: unknown
+): value is { [K in P]: unknown } {
+  return !!value && typeof value === 'object' && prop in value
 }
 
-function wrapError(error: Error) {
-  throw new DecodeError(error.message, error)
+export interface Flusher {
+  flush(): Promise<void>
+}
+
+export function isFlusher(value: unknown): value is Flusher {
+  return hasProp('flush', value) && typeof value.flush === 'function'
 }

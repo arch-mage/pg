@@ -1,4 +1,4 @@
-import { base64, Reader, Writer } from '../deps.ts'
+import { base64 } from '../deps.ts'
 import { UnexpectedAuthCodeError } from '../errors.ts'
 import { ReadWriteProtocol } from '../protocol/mod.ts'
 import { Protocol, NotificationListener, Param } from '../types.ts'
@@ -25,7 +25,10 @@ export class Conn {
   readonly #proto: FilteredProtocol
   readonly #queue: Promise<void>[]
 
-  static fromConn(conn: Reader & Writer, opts: Options): Promise<Conn> {
+  static fromConn(
+    conn: Deno.Reader & Deno.Writer,
+    opts: Options
+  ): Promise<Conn> {
     return Conn.fromProto(ReadWriteProtocol.fromConn(conn), opts)
   }
 
