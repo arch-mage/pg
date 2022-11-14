@@ -1,7 +1,7 @@
 import { base64, Reader, Writer } from '../deps.ts'
 import { UnexpectedAuthCodeError } from '../errors.ts'
 import { Protocol } from '../protocol/mod.ts'
-import { AuthCode, IProtocol, NotificationListener, Param } from '../types.ts'
+import { IProtocol, NotificationListener, Param } from '../types.ts'
 import { extract } from '../internal/assert.ts'
 import { sasl } from '../internal/sasl-scram-sha-256.ts'
 import { Task } from './task.ts'
@@ -97,7 +97,7 @@ export class Conn {
     } else if (auth.code === 0) {
       /* empty */
     } else {
-      throw new UnexpectedAuthCodeError(auth.code, AuthCode.Ok)
+      throw new UnexpectedAuthCodeError(auth.code, 0)
     }
 
     for await (const packet of this.#proto) {

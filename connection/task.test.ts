@@ -113,7 +113,7 @@ Deno.test('query iterated', async () => {
       oid: 23,
       typelen: 4,
       typemod: 0,
-      format: 0,
+      format: 0 as const,
     },
     {
       name: 'no',
@@ -122,7 +122,7 @@ Deno.test('query iterated', async () => {
       oid: 23,
       typelen: 4,
       typemod: 0,
-      format: 0,
+      format: 0 as const,
     },
   ]
   const row = [new Uint8Array([0, 0, 0, 1]), null]

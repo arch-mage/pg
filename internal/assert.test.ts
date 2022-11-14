@@ -6,7 +6,6 @@ import {
   UnexpectedAuthCodeError,
 } from '../errors.ts'
 import { assertEquals, assertThrows } from '../testing.ts'
-import { AuthCode } from '../types.ts'
 import { extract, extractAuth, must, mustPacket } from './assert.ts'
 
 Deno.test('must-packet', () => {
@@ -77,17 +76,10 @@ Deno.test('extract', () => {
 
 Deno.test('extractAuth', () => {
   assertThrows(
-    () =>
-      extractAuth(AuthCode.SASL as any, {
-        code: AuthCode.Ok,
-        data: null,
-      }),
+    () => extractAuth(10 as any, { code: 0, data: null }),
     UnexpectedAuthCodeError,
     'unexpected auth response: 0'
   )
 
-  assertEquals(
-    extractAuth(AuthCode.Ok, { code: AuthCode.Ok, data: null }),
-    null
-  )
+  assertEquals(extractAuth(0, { code: 0, data: null }), null)
 })

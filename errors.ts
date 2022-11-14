@@ -1,4 +1,4 @@
-import { AuthCode, MessageFields, BackendPacket } from './types.ts'
+import { MessageFields, BackendPacket } from './types.ts'
 
 export class ProtocolError extends Error {
   constructor(message: string, cause?: unknown) {
@@ -64,10 +64,10 @@ export class UnexpectedResponseError extends DecodeError {
 }
 
 export class UnexpectedAuthCodeError extends DecodeError {
-  readonly received: AuthCode
-  readonly expected?: AuthCode
+  readonly received: number
+  readonly expected?: number
 
-  constructor(received: AuthCode, expected?: AuthCode) {
+  constructor(received: number, expected?: number) {
     const message =
       typeof expected === 'string'
         ? `unexpected auth response: ${received}. expected: ${expected}`

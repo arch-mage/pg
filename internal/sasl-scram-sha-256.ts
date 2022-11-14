@@ -1,6 +1,6 @@
 import { putVarnum, base64, NodeBuffer } from '../deps.ts'
 import { SASLError } from '../errors.ts'
-import { AuthCode, IProtocol } from '../types.ts'
+import { IProtocol } from '../types.ts'
 import { extract, extractAuth, must } from './assert.ts'
 import { hmac256, pbkdf2, xorBuffer } from './crypto.ts'
 
@@ -13,7 +13,7 @@ export async function sasl(
   const serverFirstMessage = await proto
     .recv()
     .then(extract('R'))
-    .then(extractAuth(AuthCode.SASLContinue))
+    .then(extractAuth(11))
   const attrs = new Map(
     serverFirstMessage
       .split(',')
@@ -71,13 +71,13 @@ export async function sasl(
   const serverFinalMessage = await proto
     .recv()
     .then(extract('R'))
-    .then(extractAuth(AuthCode.SASLFinal))
+    .then(extractAuth(12))
 
   if (serverFinalMessage !== 'v=' + serverSignature) {
     throw new SASLError('mismatch server signature')
   }
 
-  await proto.recv().then(extract('R')).then(extractAuth(AuthCode.Ok))
+  await proto.recv().then(extract('R')).then(extractAuth(0))
 }
 
 function encodeInit(nonce: string): Uint8Array {

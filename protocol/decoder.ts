@@ -6,12 +6,7 @@ import {
   UnrecognizedReadyStateError,
   UnrecognizedResponseError,
 } from '../errors.ts'
-import {
-  AuthCode,
-  BackendPacket,
-  ColumnDescription,
-  ReadyState,
-} from '../types.ts'
+import { BackendPacket, ColumnDescription } from '../types.ts'
 
 export class Decoder {
   #dec: TextDecoder
@@ -223,7 +218,7 @@ export class PacketDecoder extends Decoder {
       // AuthenticationSSPI (B)
       const auth = this.int32()
       if (auth === 0) {
-        return { code, data: { code: AuthCode.Ok, data: null } }
+        return { code, data: { code: auth, data: null } }
       }
 
       if (auth === 10) {
@@ -231,20 +226,20 @@ export class PacketDecoder extends Decoder {
         for (let mech = this.cstr(); mech; mech = this.cstr()) {
           data.push(mech)
         }
-        return { code, data: { code: AuthCode.SASL, data } }
+        return { code, data: { code: auth, data } }
       }
 
       if (auth === 11) {
         return {
           code,
-          data: { code: AuthCode.SASLContinue, data: this.str() },
+          data: { code: auth, data: this.str() },
         }
       }
 
       if (auth === 12) {
         return {
           code,
-          data: { code: AuthCode.SASLFinal, data: this.str() },
+          data: { code: auth, data: this.str() },
         }
       }
       throw new UnexpectedAuthCodeError(auth)
@@ -296,9 +291,9 @@ export class PacketDecoder extends Decoder {
     if (code === 'Z') {
       // ReadyForQuery (B)
       const data = String.fromCharCode(this.byte())
-      if (data === 'I') return { code, data: ReadyState.Idle }
-      if (data === 'T') return { code, data: ReadyState.Transaction }
-      if (data === 'E') return { code, data: ReadyState.Error }
+      if (data === 'I') return { code, data }
+      if (data === 'T') return { code, data }
+      if (data === 'E') return { code, data }
       throw new UnrecognizedReadyStateError(data)
     }
     throw new UnrecognizedResponseError(code)

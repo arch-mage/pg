@@ -6,11 +6,9 @@ import {
   UnrecognizedResponseError,
 } from '../errors.ts'
 import {
-  AuthCode,
   ColumnDescription,
   FrontendPacket,
   BackendPacket,
-  ReadyState,
   IProtocol,
 } from '../types.ts'
 import { Encoder } from './encoder.ts'
@@ -216,7 +214,7 @@ export class Protocol implements IProtocol {
       // AuthenticationSSPI (B)
       const auth = dec.int32()
       if (auth === 0) {
-        return { code, data: { code: AuthCode.Ok, data: null } }
+        return { code, data: { code: auth, data: null } }
       }
 
       if (auth === 10) {
@@ -224,21 +222,14 @@ export class Protocol implements IProtocol {
         for (let mech = dec.cstr(); mech; mech = dec.cstr()) {
           data.push(mech)
         }
-        return { code, data: { code: AuthCode.SASL, data } }
+        return { code, data: { code: auth, data } }
       }
-
       if (auth === 11) {
-        return {
-          code,
-          data: { code: AuthCode.SASLContinue, data: dec.str() },
-        }
+        return { code, data: { code: auth, data: dec.str() } }
       }
 
       if (auth === 12) {
-        return {
-          code,
-          data: { code: AuthCode.SASLFinal, data: dec.str() },
-        }
+        return { code, data: { code: auth, data: dec.str() } }
       }
       throw new UnexpectedAuthCodeError(auth)
     }
@@ -289,9 +280,9 @@ export class Protocol implements IProtocol {
     if (code === 'Z') {
       // ReadyForQuery (B)
       const data = String.fromCharCode(dec.byte())
-      if (data === 'I') return { code, data: ReadyState.Idle }
-      if (data === 'T') return { code, data: ReadyState.Transaction }
-      if (data === 'E') return { code, data: ReadyState.Error }
+      if (data === 'I') return { code, data }
+      if (data === 'T') return { code, data }
+      if (data === 'E') return { code, data }
       throw new UnrecognizedReadyStateError(data)
     }
     throw new UnrecognizedResponseError(code)

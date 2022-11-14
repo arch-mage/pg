@@ -5,11 +5,9 @@ import {
   UnexpectedResponseError,
 } from '../errors.ts'
 import {
-  AuthCode,
   AuthData,
   ColumnDescription,
   BackendPacket,
-  ReadyState,
   MessageFields,
 } from '../types.ts'
 
@@ -91,8 +89,13 @@ export function extract(
 export function extract(code: 't', packet: BackendPacket | null): number[]
 export function extract(code: 't'): (packet: BackendPacket | null) => number[]
 
-export function extract(code: 'Z', packet: BackendPacket | null): ReadyState
-export function extract(code: 'Z'): (packet: BackendPacket | null) => ReadyState
+export function extract(
+  code: 'Z',
+  packet: BackendPacket | null
+): 'I' | 'T' | 'E'
+export function extract(
+  code: 'Z'
+): (packet: BackendPacket | null) => 'I' | 'T' | 'E'
 
 export function extract(
   code: BackendPacket['code'],
@@ -117,19 +120,15 @@ export function extract(
   return typeof packet !== 'undefined' ? assert(packet) : assert
 }
 
-export function extractAuth(code: AuthCode.Ok, data: AuthData): null
-export function extractAuth(code: AuthCode.Ok): (data: AuthData) => null
-export function extractAuth(code: AuthCode.SASL, data: AuthData): string[]
-export function extractAuth(code: AuthCode.SASL): (data: AuthData) => string[]
-export function extractAuth(code: AuthCode.SASLContinue, data: AuthData): string
-export function extractAuth(
-  code: AuthCode.SASLContinue
-): (data: AuthData) => string
-export function extractAuth(code: AuthCode.SASLFinal, data: AuthData): string
-export function extractAuth(
-  code: AuthCode.SASLFinal
-): (data: AuthData) => string
-export function extractAuth(code: AuthCode, data?: AuthData): unknown {
+export function extractAuth(code: 0, data: AuthData): null
+export function extractAuth(code: 0): (data: AuthData) => null
+export function extractAuth(code: 10, data: AuthData): string[]
+export function extractAuth(code: 10): (data: AuthData) => string[]
+export function extractAuth(code: 11, data: AuthData): string
+export function extractAuth(code: 11): (data: AuthData) => string
+export function extractAuth(code: 12, data: AuthData): string
+export function extractAuth(code: 12): (data: AuthData) => string
+export function extractAuth(code: number, data?: AuthData): unknown {
   function assert(data: AuthData) {
     if (data.code === code) {
       return data.data

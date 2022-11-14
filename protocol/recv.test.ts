@@ -1,6 +1,5 @@
 import { Buffer } from '../deps.ts'
 import { assertEquals, assertRejects, buffer } from '../testing.ts'
-import { AuthCode, ReadyState } from '../types.ts'
 import { Protocol } from './mod.ts'
 import { DecodeError, UnrecognizedResponseError } from '../errors.ts'
 
@@ -36,7 +35,7 @@ Deno.test('authentication', async () => {
   assertEquals(await decode(buffer('R', [0, 0, 0, 8], [0, 0, 0, 0])), {
     code: 'R' as const,
     data: {
-      code: AuthCode.Ok,
+      code: 0,
       data: null,
     },
   })
@@ -48,7 +47,7 @@ Deno.test('authentication', async () => {
     {
       code: 'R' as const,
       data: {
-        code: AuthCode.SASL,
+        code: 10,
         data: ['SCRAM-SHA-256'],
       },
     }
@@ -59,7 +58,7 @@ Deno.test('authentication', async () => {
     {
       code: 'R' as const,
       data: {
-        code: AuthCode.SASLContinue,
+        code: 11,
         data: 'continue',
       },
     }
@@ -70,7 +69,7 @@ Deno.test('authentication', async () => {
     {
       code: 'R' as const,
       data: {
-        code: AuthCode.SASLFinal,
+        code: 12,
         data: 'final',
       },
     }
@@ -105,15 +104,15 @@ Deno.test('readyForQuery', async () => {
   assertRejects(() => decode(buffer('Z', [0, 0, 0, 5], 'A')))
   assertEquals(await decode(buffer('Z', [0, 0, 0, 5], 'I')), {
     code: 'Z' as const,
-    data: ReadyState.Idle,
+    data: 'I',
   })
   assertEquals(await decode(buffer('Z', [0, 0, 0, 5], 'T')), {
     code: 'Z' as const,
-    data: ReadyState.Transaction,
+    data: 'T',
   })
   assertEquals(await decode(buffer('Z', [0, 0, 0, 5], 'E')), {
     code: 'Z' as const,
-    data: ReadyState.Error,
+    data: 'E',
   })
 })
 

@@ -1,7 +1,6 @@
 import { assertEquals, assertThrows, uint8 } from '../testing.ts'
 import { Decoder, PacketDecoder } from './decoder.ts'
 import { DecodeError, UnrecognizedResponseError } from '../errors.ts'
-import { AuthCode, ReadyState } from '../types.ts'
 
 Deno.test('int16', () => {
   const dec = new Decoder(new Uint8Array([0x00, 0x01, 0x00]))
@@ -59,7 +58,7 @@ Deno.test('authentication', () => {
     {
       code: 'R' as const,
       data: {
-        code: AuthCode.Ok,
+        code: 0,
         data: null,
       },
     }
@@ -72,7 +71,7 @@ Deno.test('authentication', () => {
     {
       code: 'R' as const,
       data: {
-        code: AuthCode.SASL,
+        code: 10,
         data: ['SCRAM-SHA-256'],
       },
     }
@@ -85,7 +84,7 @@ Deno.test('authentication', () => {
     {
       code: 'R' as const,
       data: {
-        code: AuthCode.SASLContinue,
+        code: 11,
         data: 'continue',
       },
     }
@@ -98,7 +97,7 @@ Deno.test('authentication', () => {
     {
       code: 'R' as const,
       data: {
-        code: AuthCode.SASLFinal,
+        code: 12,
         data: 'final',
       },
     }
@@ -142,15 +141,15 @@ Deno.test('readyForQuery', () => {
 
   assertEquals(new PacketDecoder(uint8('Z', [0, 0, 0, 5], 'I')).decode(), {
     code: 'Z' as const,
-    data: ReadyState.Idle,
+    data: 'I',
   })
   assertEquals(new PacketDecoder(uint8('Z', [0, 0, 0, 5], 'T')).decode(), {
     code: 'Z' as const,
-    data: ReadyState.Transaction,
+    data: 'T',
   })
   assertEquals(new PacketDecoder(uint8('Z', [0, 0, 0, 5], 'E')).decode(), {
     code: 'Z' as const,
-    data: ReadyState.Error,
+    data: 'E',
   })
 })
 
@@ -432,7 +431,7 @@ Deno.test('chunked', () => {
   dec.feed(uint8(0, 'S'))
   assertEquals(dec.decode(), {
     code: 'R',
-    data: { code: AuthCode.Ok, data: null },
+    data: { code: 0, data: null },
   })
   assertEquals(dec.decode(), null)
   assertEquals(dec.data, uint8('S'))
