@@ -1,8 +1,4 @@
-import { Buffer, Reader, Writer } from './deps.ts'
-
-export function uint8(...bytes: number[]) {
-  return new Uint8Array(bytes)
-}
+import { Buffer, concat, Reader, Writer } from './deps.ts'
 
 export class TestBuffer implements Reader, Writer {
   reader: Buffer
@@ -26,6 +22,34 @@ export class TestBuffer implements Reader, Writer {
   write(p: Uint8Array): Promise<number> {
     return this.writer.write(p)
   }
+}
+
+export function uint8(...bytes: Array<string | number | number[]>) {
+  return new Uint8Array(
+    bytes.flatMap((chunk) => {
+      if (Array.isArray(chunk)) {
+        return chunk
+      }
+      if (typeof chunk === 'number') {
+        return [chunk]
+      }
+      return [...new TextEncoder().encode(chunk)]
+    })
+  )
+}
+
+export function buffer(...source: Array<string | number | number[]>) {
+  return new Buffer(
+    concat(
+      ...source.map((source) =>
+        Array.isArray(source)
+          ? new Uint8Array(source)
+          : typeof source === 'string'
+          ? new TextEncoder().encode(source)
+          : new Uint8Array([source])
+      )
+    )
+  )
 }
 
 export {

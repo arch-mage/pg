@@ -2,18 +2,6 @@ export interface FullReader {
   readFull(buff: Uint8Array): Promise<Uint8Array | null>
 }
 
-export type TypedArrayMutableProperties =
-  | 'copyWithin'
-  | 'fill'
-  | 'reverse'
-  | 'set'
-  | 'sort'
-
-export interface ReadonlyUint8Array
-  extends Omit<Uint8Array, TypedArrayMutableProperties> {
-  readonly [n: number]: number
-}
-
 export type Param = Uint8Array | null
 
 export const enum Format {

@@ -13,12 +13,12 @@ import {
   ReadyState,
   IProtocol,
 } from '../types.ts'
-import { Decoder } from './decoder.ts'
 import { Encoder } from './encoder.ts'
+import { readPacket } from '../internal/utils.ts'
+import { Decoder } from './decoder.ts'
 
 export class Protocol implements IProtocol {
   #enc: Encoder
-  #dec: Decoder
   #rd: BufReader
   #wd: BufWriter
   #closed: boolean
@@ -33,7 +33,6 @@ export class Protocol implements IProtocol {
 
   constructor(reader: Reader, writer: Writer, size = 4096) {
     this.#enc = new Encoder(size)
-    this.#dec = new Decoder(size)
     this.#rd = BufReader.create(reader, size)
     this.#wd = BufWriter.create(writer, size)
     this.#closed = false
@@ -46,7 +45,8 @@ export class Protocol implements IProtocol {
     const pos = this.#enc.pos
     const buf = this.#enc.alloc(4)
     return () => {
-      putVarnum(buf, this.#enc.pos - pos, {
+      const size = this.#enc.pos - pos
+      putVarnum(buf, size, {
         endian: 'big',
         dataType: 'int32',
       })
@@ -122,12 +122,13 @@ export class Protocol implements IProtocol {
     if (this.#closed) {
       return null
     }
-    const raw = await this.#dec.readPacket(this.#rd)
+    const raw = await readPacket(this.#rd)
     if (!raw) {
       this.#closed = true
       return null
     }
     const [code] = raw
+    const dec = new Decoder(raw[1])
     if (code === '1') {
       return { code, data: null }
     }
@@ -142,26 +143,26 @@ export class Protocol implements IProtocol {
       return {
         code,
         data: {
-          processId: this.#dec.int32(),
-          channel: this.#dec.cstr(),
-          payload: this.#dec.cstr(),
+          processId: dec.int32(),
+          channel: dec.cstr(),
+          payload: dec.cstr(),
         },
       }
     }
     if (code === 'C') {
       // CommandComplete (B)
-      return { code, data: this.#dec.cstr() }
+      return { code, data: dec.cstr() }
     }
     if (code === 'D') {
       // DataRow (B)
-      const n = this.#dec.int16()
+      const n = dec.int16()
       const data = []
       for (let i = 0; i < n; ++i) {
-        const len = this.#dec.int32()
+        const len = dec.int32()
         if (len === -1) {
           data.push(null)
         } else {
-          data.push(this.#dec.bytes(len))
+          data.push(dec.bytes(len))
         }
       }
       return { code, data }
@@ -171,29 +172,29 @@ export class Protocol implements IProtocol {
       // deno-lint-ignore no-explicit-any
       const data: any = {}
       for (;;) {
-        const key = this.#dec.byte()
+        const key = dec.byte()
         if (key === 0) {
           break
         }
-        const val = this.#dec.cstr()
+        const val = dec.cstr()
         data[String.fromCharCode(key)] = val
       }
       return { code, data }
     }
     if (code === 'K') {
       // BackendKeyData (B)
-      return { code, data: [this.#dec.int32(), this.#dec.int32()] }
+      return { code, data: [dec.int32(), dec.int32()] }
     }
     if (code === 'N') {
       // NoticeResponse (B)
       // deno-lint-ignore no-explicit-any
       const data: any = {}
       for (;;) {
-        const key = this.#dec.byte()
+        const key = dec.byte()
         if (key === 0) {
           break
         }
-        const val = this.#dec.cstr()
+        const val = dec.cstr()
         data[String.fromCharCode(key)] = val
       }
       return { code, data }
@@ -213,14 +214,14 @@ export class Protocol implements IProtocol {
       // AuthenticationSASLFinal (B)
       // AuthenticationSCMCredential (B)
       // AuthenticationSSPI (B)
-      const auth = this.#dec.int32()
+      const auth = dec.int32()
       if (auth === 0) {
         return { code, data: { code: AuthCode.Ok, data: null } }
       }
 
       if (auth === 10) {
         const data = []
-        for (let mech = this.#dec.cstr(); mech; mech = this.#dec.cstr()) {
+        for (let mech = dec.cstr(); mech; mech = dec.cstr()) {
           data.push(mech)
         }
         return { code, data: { code: AuthCode.SASL, data } }
@@ -229,38 +230,38 @@ export class Protocol implements IProtocol {
       if (auth === 11) {
         return {
           code,
-          data: { code: AuthCode.SASLContinue, data: this.#dec.str() },
+          data: { code: AuthCode.SASLContinue, data: dec.str() },
         }
       }
 
       if (auth === 12) {
         return {
           code,
-          data: { code: AuthCode.SASLFinal, data: this.#dec.str() },
+          data: { code: AuthCode.SASLFinal, data: dec.str() },
         }
       }
       throw new UnexpectedAuthCodeError(auth)
     }
     if (code === 'S') {
       // ParameterStatus (B)
-      return { code, data: [this.#dec.cstr(), this.#dec.cstr()] }
+      return { code, data: [dec.cstr(), dec.cstr()] }
     }
     if (code === 's') {
       return { code, data: null }
     }
     if (code === 'T') {
       // RowDescription (B)
-      const n = this.#dec.int16()
+      const n = dec.int16()
 
       const data: ColumnDescription[] = []
       for (let i = 0; i < n; ++i) {
-        const name = this.#dec.cstr()
-        const table = this.#dec.int32()
-        const attNum = this.#dec.int16()
-        const oid = this.#dec.int32()
-        const typelen = this.#dec.int16()
-        const typemod = this.#dec.int32()
-        const format = this.#dec.int16() as 0 | 1
+        const name = dec.cstr()
+        const table = dec.int32()
+        const attNum = dec.int16()
+        const oid = dec.int32()
+        const typelen = dec.int16()
+        const typemod = dec.int32()
+        const format = dec.int16() as 0 | 1
         if (format !== 0 && format !== 1) {
           throw new UnrecognizedFormatCodeError(format)
         }
@@ -278,16 +279,16 @@ export class Protocol implements IProtocol {
     }
     if (code === 't') {
       // ParameterDescription (B)
-      const n = this.#dec.int16()
+      const n = dec.int16()
       const data = []
       for (let i = 0; i < n; ++i) {
-        data.push(this.#dec.int32())
+        data.push(dec.int32())
       }
       return { code, data }
     }
     if (code === 'Z') {
       // ReadyForQuery (B)
-      const data = String.fromCharCode(this.#dec.byte())
+      const data = String.fromCharCode(dec.byte())
       if (data === 'I') return { code, data: ReadyState.Idle }
       if (data === 'T') return { code, data: ReadyState.Transaction }
       if (data === 'E') return { code, data: ReadyState.Error }

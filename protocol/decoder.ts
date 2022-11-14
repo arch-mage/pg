@@ -1,51 +1,40 @@
 import { concat, varnum } from '../deps.ts'
-import { DecodeError } from '../errors.ts'
-import { FullReader, ReadonlyUint8Array } from '../types.ts'
+import {
+  DecodeError,
+  UnexpectedAuthCodeError,
+  UnrecognizedFormatCodeError,
+  UnrecognizedReadyStateError,
+  UnrecognizedResponseError,
+} from '../errors.ts'
+import {
+  AuthCode,
+  BackendPacket,
+  ColumnDescription,
+  ReadyState,
+} from '../types.ts'
 
 export class Decoder {
-  #pos: number
-  #end: number
   #dec: TextDecoder
-  #head: Uint8Array
-  #body: Uint8Array
+  pos: number
+  data: Uint8Array
+  limit?: number
 
-  constructor(size = 4096) {
-    this.#pos = 0
-    this.#end = 0
-    this.#head = new Uint8Array(5)
-    this.#body = new Uint8Array(size)
+  constructor(buff: Uint8Array) {
+    this.pos = 0
     this.#dec = new TextDecoder()
+    this.data = buff
   }
 
-  get #sub() {
-    return this.#body.subarray(0, this.#end)
-  }
-
-  #ensure(size: number): this {
-    if (this.#body.length - this.#pos >= size) {
-      return this
-    }
-    const grow = Math.max(size, Math.floor(this.#body.length / 2))
-    this.#body = concat(this.#body, new Uint8Array(grow))
-    return this
-  }
-
-  reset(): this {
-    this.#pos = 0
-    this.#end = 0
-    return this
-  }
-
-  get buff(): ReadonlyUint8Array {
-    return this.#body.subarray(0, this.#end)
+  get buff() {
+    return this.data.subarray(0, this.limit)
   }
 
   int16(): number {
-    const num = varnum(this.#sub.subarray(this.#pos, this.#pos + 2), {
+    const num = varnum(this.buff.subarray(this.pos, this.pos + 2), {
       dataType: 'int16',
       endian: 'big',
     })
-    this.#pos += 2
+    this.pos += 2
     if (typeof num === 'number') {
       return num
     }
@@ -53,11 +42,11 @@ export class Decoder {
   }
 
   int32(): number {
-    const num = varnum(this.#sub.subarray(this.#pos, this.#pos + 4), {
+    const num = varnum(this.buff.subarray(this.pos, this.pos + 4), {
       dataType: 'int32',
       endian: 'big',
     })
-    this.#pos += 4
+    this.pos += 4
     if (typeof num === 'number') {
       return num
     }
@@ -65,8 +54,8 @@ export class Decoder {
   }
 
   bytes(size: number): Uint8Array {
-    const buff = this.#sub.slice(this.#pos, this.#pos + size)
-    this.#pos += Math.min(buff.length, size)
+    const buff = this.buff.slice(this.pos, this.pos + size)
+    this.pos += Math.min(buff.length, size)
     if (buff.length !== size) {
       throw new DecodeError(`not a buff with length of ${size}`)
     }
@@ -74,62 +63,253 @@ export class Decoder {
   }
 
   byte(): number {
-    const byte = this.#sub.at(this.#pos++)
+    const byte = this.buff.at(this.pos++)
     if (typeof byte === 'number') {
       return byte
     }
     throw new DecodeError('not byte')
   }
 
+  char(): string {
+    const byte = this.buff.at(this.pos++)
+    if (typeof byte === 'number') {
+      return String.fromCharCode(byte)
+    }
+    throw new DecodeError('not char')
+  }
+
   cstr(): string {
-    const idx = this.#sub.subarray(this.#pos).indexOf(0)
+    const idx = this.buff.subarray(this.pos).indexOf(0)
     if (idx === -1) {
-      this.#pos = this.#end
+      this.pos = this.buff.length
       throw new DecodeError('not cstr')
     }
-    const str = this.#dec.decode(this.#sub.subarray(this.#pos, this.#pos + idx))
-    this.#pos += idx + 1
+    const str = this.#dec.decode(this.buff.subarray(this.pos, this.pos + idx))
+    this.pos += idx + 1
     return str
   }
 
   str(): string {
-    const idx = this.#sub.subarray(this.#pos).indexOf(0)
+    const idx = this.buff.subarray(this.pos).indexOf(0)
     let buf
     if (idx === -1) {
-      buf = this.#sub.subarray(this.#pos)
-      this.#pos = this.#end
+      buf = this.buff.subarray(this.pos)
+      this.pos = this.buff.length
     } else {
-      buf = this.#sub.subarray(this.#pos, this.#pos + idx)
-      this.#pos += idx
+      buf = this.buff.subarray(this.pos, this.pos + idx)
+      this.pos += idx
     }
     if (buf.length === 0) {
       throw new DecodeError('empty string')
     }
     return this.#dec.decode(buf)
   }
-
-  async readPacket(reader: FullReader): Promise<string | null> {
-    this.reset()
-
-    if (!(await reader.readFull(this.#head).catch(wrapError))) {
-      return null
-    }
-    const code = String.fromCharCode(this.#head[0])
-    this.#end =
-      (varnum(this.#head.subarray(1, 5), {
-        endian: 'big',
-        dataType: 'int32',
-      }) as number) - 4
-    this.#ensure(this.#end)
-
-    if (!(await reader.readFull(this.#sub).catch(wrapError))) {
-      throw new DecodeError('insufficient data to read')
-    }
-
-    return code
-  }
 }
 
-function wrapError(error: Error) {
-  throw new DecodeError(error.message, error)
+export class PacketDecoder extends Decoder {
+  constructor(buff?: Uint8Array) {
+    super(buff ?? new Uint8Array(0))
+  }
+  #header() {
+    this.data = this.data.subarray(this.pos)
+    this.pos = 0
+    if (this.data.length < 5) {
+      return null
+    }
+    const code = this.char()
+    const size = this.int32()
+    if (size + 1 > this.data.length) {
+      this.pos -= 5
+      return null
+    }
+    this.limit = this.pos + (size - 4)
+    return code
+  }
+
+  feed(buff: Uint8Array): this {
+    this.data = concat(this.data, buff)
+    return this
+  }
+
+  decode(): BackendPacket | null {
+    const code = this.#header()
+    if (code === null) {
+      return null
+    }
+    if (code === '1') {
+      return { code, data: null }
+    }
+    if (code === '2') {
+      return { code, data: null }
+    }
+    if (code === '3') {
+      return { code, data: null }
+    }
+    if (code === 'A') {
+      // NotificationResponse (B)
+      return {
+        code,
+        data: {
+          processId: this.int32(),
+          channel: this.cstr(),
+          payload: this.cstr(),
+        },
+      }
+    }
+    if (code === 'C') {
+      // CommandComplete (B)
+      return { code, data: this.cstr() }
+    }
+    if (code === 'D') {
+      // DataRow (B)
+      const n = this.int16()
+      const data = []
+      for (let i = 0; i < n; ++i) {
+        const len = this.int32()
+        if (len === -1) {
+          data.push(null)
+        } else {
+          data.push(this.bytes(len))
+        }
+      }
+      return { code, data }
+    }
+    if (code === 'E') {
+      // ErrorResponse (B)
+      // deno-lint-ignore no-explicit-any
+      const data: any = {}
+      for (;;) {
+        const key = this.byte()
+        if (key === 0) {
+          break
+        }
+        const val = this.cstr()
+        data[String.fromCharCode(key)] = val
+      }
+      return { code, data }
+    }
+    if (code === 'K') {
+      // BackendKeyData (B)
+      return { code, data: [this.int32(), this.int32()] }
+    }
+    if (code === 'N') {
+      // NoticeResponse (B)
+      // deno-lint-ignore no-explicit-any
+      const data: any = {}
+      for (;;) {
+        const key = this.byte()
+        if (key === 0) {
+          break
+        }
+        const val = this.cstr()
+        data[String.fromCharCode(key)] = val
+      }
+      return { code, data }
+    }
+    if (code === 'n') {
+      return { code, data: null }
+    }
+    if (code === 'R') {
+      // AuthenticationCleartextPassword (B)
+      // AuthenticationGSS (B)
+      // AuthenticationGSSContinue (B)
+      // AuthenticationKerberosV5 (B)
+      // AuthenticationMD5Password (B)
+      // AuthenticationOk (B)
+      // AuthenticationSASL (B)
+      // AuthenticationSASLContinue (B)
+      // AuthenticationSASLFinal (B)
+      // AuthenticationSCMCredential (B)
+      // AuthenticationSSPI (B)
+      const auth = this.int32()
+      if (auth === 0) {
+        return { code, data: { code: AuthCode.Ok, data: null } }
+      }
+
+      if (auth === 10) {
+        const data = []
+        for (let mech = this.cstr(); mech; mech = this.cstr()) {
+          data.push(mech)
+        }
+        return { code, data: { code: AuthCode.SASL, data } }
+      }
+
+      if (auth === 11) {
+        return {
+          code,
+          data: { code: AuthCode.SASLContinue, data: this.str() },
+        }
+      }
+
+      if (auth === 12) {
+        return {
+          code,
+          data: { code: AuthCode.SASLFinal, data: this.str() },
+        }
+      }
+      throw new UnexpectedAuthCodeError(auth)
+    }
+    if (code === 'S') {
+      // ParameterStatus (B)
+      return { code, data: [this.cstr(), this.cstr()] }
+    }
+    if (code === 's') {
+      return { code, data: null }
+    }
+    if (code === 'T') {
+      // RowDescription (B)
+      const n = this.int16()
+
+      const data: ColumnDescription[] = []
+      for (let i = 0; i < n; ++i) {
+        const name = this.cstr()
+        const table = this.int32()
+        const attNum = this.int16()
+        const oid = this.int32()
+        const typelen = this.int16()
+        const typemod = this.int32()
+        const format = this.int16() as 0 | 1
+        if (format !== 0 && format !== 1) {
+          throw new UnrecognizedFormatCodeError(format)
+        }
+        data.push({
+          name,
+          table: table === 0 ? null : table,
+          attNum: attNum === 0 ? null : attNum,
+          oid,
+          typelen,
+          typemod,
+          format,
+        })
+      }
+      return { code, data }
+    }
+    if (code === 't') {
+      // ParameterDescription (B)
+      const n = this.int16()
+      const data = []
+      for (let i = 0; i < n; ++i) {
+        data.push(this.int32())
+      }
+      return { code, data }
+    }
+    if (code === 'Z') {
+      // ReadyForQuery (B)
+      const data = String.fromCharCode(this.byte())
+      if (data === 'I') return { code, data: ReadyState.Idle }
+      if (data === 'T') return { code, data: ReadyState.Transaction }
+      if (data === 'E') return { code, data: ReadyState.Error }
+      throw new UnrecognizedReadyStateError(data)
+    }
+    throw new UnrecognizedResponseError(code)
+  }
+
+  [Symbol.iterator](): IterableIterator<BackendPacket> {
+    return this
+  }
+
+  next(): IteratorResult<BackendPacket, null> {
+    const value = this.decode()
+    return value ? { done: false, value } : { done: true, value }
+  }
 }

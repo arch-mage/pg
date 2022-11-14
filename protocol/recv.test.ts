@@ -1,22 +1,8 @@
-import { Buffer, concat } from '../deps.ts'
-import { assertEquals, assertRejects } from '../testing.ts'
+import { Buffer } from '../deps.ts'
+import { assertEquals, assertRejects, buffer } from '../testing.ts'
 import { AuthCode, ReadyState } from '../types.ts'
 import { Protocol } from './mod.ts'
 import { DecodeError, UnrecognizedResponseError } from '../errors.ts'
-
-function buffer(...source: Array<string | number | number[]>) {
-  return new Buffer(
-    concat(
-      ...source.map((source) =>
-        Array.isArray(source)
-          ? new Uint8Array(source)
-          : typeof source === 'string'
-          ? new TextEncoder().encode(source)
-          : new Uint8Array([source])
-      )
-    )
-  )
-}
 
 function decode(buff: Buffer) {
   return Protocol.fromPair(buff, buff).recv()
