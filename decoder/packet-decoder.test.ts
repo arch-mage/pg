@@ -1,106 +1,54 @@
 import { assertEquals, assertThrows, uint8 } from '../testing.ts'
-import { Decoder, PacketDecoder } from './decoder.ts'
-import { DecodeError, UnrecognizedResponseError } from '../errors.ts'
-
-Deno.test('int16', () => {
-  const dec = new Decoder(new Uint8Array([0x00, 0x01, 0x00]))
-  assertEquals(dec.int16(), 1)
-  assertThrows(() => dec.int16(), DecodeError, 'not int16')
-})
-
-Deno.test('int32', () => {
-  const dec = new Decoder(new Uint8Array([0x00, 0x00, 0x00, 0x01, 0x00]))
-  assertEquals(dec.int32(), 1)
-  assertThrows(() => dec.int32(), DecodeError, 'not int32')
-})
-
-Deno.test('bytes', () => {
-  const dec = new Decoder(new Uint8Array([0x00, 0x00, 0x00]))
-  assertEquals(dec.bytes(2), new Uint8Array([0x00, 0x00]))
-  assertThrows(() => dec.bytes(2), DecodeError, 'not a buff with length of 2')
-})
-
-Deno.test('byte', () => {
-  const dec = new Decoder(new Uint8Array([0x00]))
-  assertEquals(dec.byte(), 0)
-  assertThrows(() => dec.byte(), DecodeError, 'not byte')
-})
-
-Deno.test('char', () => {
-  const dec = new Decoder(new Uint8Array([0x41]))
-  assertEquals(dec.char(), 'A')
-  assertThrows(() => dec.char(), DecodeError, 'not char')
-})
-
-Deno.test('cstr', () => {
-  const dec = new Decoder(new Uint8Array([0x00, 0x41, 0x00, 0x42]))
-  assertEquals(dec.cstr(), '')
-  assertEquals(dec.cstr(), 'A')
-  assertThrows(() => dec.cstr(), DecodeError, 'not cstr')
-})
-
-Deno.test('str', () => {
-  const dec = new Decoder(new Uint8Array([0x41, 0x00, 0x42, 0x43]))
-  assertEquals(dec.str(), 'A')
-  assertThrows(() => dec.str(), DecodeError, 'empty string')
-  dec.byte()
-  assertEquals(dec.str(), 'BC')
-  assertThrows(() => dec.str(), DecodeError, 'empty string')
-})
+import {
+  DecodeError,
+  UnrecognizedAuth,
+  UnrecognizedFormatCode,
+  UnrecognizedBackendPacket,
+} from '../errors.ts'
+import { PacketDecoder } from './packet-decoder.ts'
 
 Deno.test('authentication', () => {
-  assertThrows(() =>
-    new PacketDecoder(uint8('R', [0, 0, 0, 8], [0, 0, 0, 1])).decode()
+  const dec = new PacketDecoder()
+  dec.feed(
+    uint8(
+      'R',
+      [
+        0, 0, 0, 23, 0, 0, 0, 10, 83, 67, 82, 65, 77, 45, 83, 72, 65, 45, 50,
+        53, 54, 0, 0,
+      ],
+      'R',
+      [0, 0, 0, 16, 0, 0, 0, 11, 99, 111, 110, 116, 105, 110, 117, 101],
+      'R',
+      [
+        0, 0, 0, 54, 0, 0, 0, 12, 118, 61, 70, 103, 48, 56, 70, 111, 73, 71,
+        120, 109, 116, 121, 85, 78, 48, 55, 71, 86, 75, 107, 111, 118, 70, 66,
+        71, 98, 69, 56, 82, 43, 50, 81, 104, 100, 83, 102, 57, 65, 111, 73, 70,
+        120, 65, 61,
+      ],
+      'R',
+      [0, 0, 0, 8, 0, 0, 0, 0]
+    )
   )
-
-  assertEquals(
-    new PacketDecoder(uint8('R', [0, 0, 0, 8], [0, 0, 0, 0])).decode(),
-    {
-      code: 'R' as const,
-      data: {
-        code: 0,
-        data: null,
-      },
-    }
-  )
-
-  assertEquals(
-    new PacketDecoder(
-      uint8('R', [0, 0, 0, 23], [0, 0, 0, 10], 'SCRAM-SHA-256', [0], [0])
-    ).decode(),
-    {
-      code: 'R' as const,
-      data: {
-        code: 10,
-        data: ['SCRAM-SHA-256'],
-      },
-    }
-  )
-
-  assertEquals(
-    new PacketDecoder(
-      uint8('R', [0, 0, 0, 16], [0, 0, 0, 11], 'continue')
-    ).decode(),
-    {
-      code: 'R' as const,
-      data: {
-        code: 11,
-        data: 'continue',
-      },
-    }
-  )
-
-  assertEquals(
-    new PacketDecoder(
-      uint8('R', [0, 0, 0, 13], [0, 0, 0, 12], 'final')
-    ).decode(),
-    {
-      code: 'R' as const,
-      data: {
-        code: 12,
-        data: 'final',
-      },
-    }
+  assertEquals(dec.decode(), {
+    code: 'R' as const,
+    data: { code: 10, data: ['SCRAM-SHA-256'] },
+  })
+  assertEquals(dec.decode(), {
+    code: 'R' as const,
+    data: { code: 11, data: 'continue' },
+  })
+  assertEquals(dec.decode(), {
+    code: 'R' as const,
+    data: {
+      code: 12,
+      data: 'v=Fg08FoIGxmtyUN07GVKkovFBGbE8R+2QhdSf9AoIFxA=',
+    },
+  })
+  assertEquals(dec.decode(), { code: 'R' as const, data: { code: 0 } })
+  assertThrows(
+    () => new PacketDecoder(uint8('R', [0, 0, 0, 8], [0, 0, 0, 1])).decode(),
+    UnrecognizedAuth,
+    'unrecognized auth response: 1'
   )
 })
 
@@ -109,7 +57,7 @@ Deno.test('parameterStatus', () => {
     () =>
       new PacketDecoder(uint8('S', [0, 0, 0, 12], 'app', [0], 'name')).decode(),
     DecodeError,
-    'not cstr'
+    'not a null terminated string'
   )
   assertEquals(
     new PacketDecoder(
@@ -126,7 +74,7 @@ Deno.test('backendKeyData', () => {
         uint8('K', [0, 0, 0, 11], [0, 0, 0, 1], [0, 0, 0])
       ).decode(),
     DecodeError,
-    'not int32'
+    'not an int32'
   )
   assertEquals(
     new PacketDecoder(
@@ -156,55 +104,53 @@ Deno.test('readyForQuery', () => {
 Deno.test('parseComplete', () => {
   assertEquals(new PacketDecoder(uint8('1', [0, 0, 0, 4])).decode(), {
     code: '1' as const,
-    data: null,
   })
 })
 
 Deno.test('bindComplete', () => {
   assertEquals(new PacketDecoder(uint8('2', [0, 0, 0, 4])).decode(), {
     code: '2' as const,
-    data: null,
   })
 })
 
 Deno.test('closeComplete', () => {
   assertEquals(new PacketDecoder(uint8('3', [0, 0, 0, 4])).decode(), {
     code: '3' as const,
-    data: null,
   })
 })
 
 Deno.test('portalSuspended', () => {
   assertEquals(new PacketDecoder(uint8('s', [0, 0, 0, 4])).decode(), {
     code: 's' as const,
-    data: null,
   })
 })
 
 Deno.test('noData', () => {
   assertEquals(new PacketDecoder(uint8('n', [0, 0, 0, 4])).decode(), {
     code: 'n' as const,
-    data: null,
   })
 })
 
 Deno.test('rowDescription', () => {
-  assertThrows(() =>
-    new PacketDecoder(
-      uint8(
-        'T',
-        [0, 0, 0, 27],
-        [0, 1],
-        'id',
-        0,
-        [0, 0, 0, 1],
-        [0, 1],
-        [0, 0, 0, 1],
-        [0, 1],
-        [0, 0, 0, 1],
-        [0, 2]
-      )
-    ).decode()
+  assertThrows(
+    () =>
+      new PacketDecoder(
+        uint8(
+          'T',
+          [0, 0, 0, 27],
+          [0, 1],
+          'id',
+          0,
+          [0, 0, 0, 1],
+          [0, 1],
+          [0, 0, 0, 1],
+          [0, 1],
+          [0, 0, 0, 1],
+          [0, 2]
+        )
+      ).decode(),
+    UnrecognizedFormatCode,
+    'unrecognized format code: 2'
   )
   assertEquals(
     new PacketDecoder(
@@ -275,7 +221,7 @@ Deno.test('parameterDescription', () => {
   assertThrows(
     () => new PacketDecoder(uint8('t', [0, 0, 0, 5], [0])).decode(),
     DecodeError,
-    'not int16'
+    'not an int16'
   )
   assertEquals(
     new PacketDecoder(uint8('t', [0, 0, 0, 10], [0, 1], [0, 0, 0, 1])).decode(),
@@ -375,36 +321,17 @@ Deno.test('notificationResponse', () => {
     ).decode(),
     {
       code: 'A',
-      data: { processId: 1, channel: 'info', payload: 'info' },
+      data: { process: 1, channel: 'info', payload: 'info' },
     }
   )
-})
-
-Deno.test('iterator', () => {
-  const dec = new PacketDecoder(uint8('1', [0, 0, 0, 4], '2', [0, 0, 0, 4]))
-  const iterator = dec[Symbol.iterator]()
-
-  assertEquals(iterator.next(), {
-    done: false,
-    value: { code: '1' as const, data: null },
-  })
-
-  assertEquals(iterator.next(), {
-    done: false,
-    value: { code: '2' as const, data: null },
-  })
-
-  assertEquals(iterator.next(), { done: true, value: null })
-
-  assertEquals(dec.decode(), null)
 })
 
 Deno.test('unrecognized', () => {
   const dec = new PacketDecoder(uint8('0', 0, 0, 0, 4))
   assertThrows(
     () => dec.decode(),
-    UnrecognizedResponseError,
-    'unrecognized server response: 0'
+    UnrecognizedBackendPacket,
+    'unrecognized backend packet: 0'
   )
 })
 
@@ -412,27 +339,50 @@ Deno.test('chunked', () => {
   const dec = new PacketDecoder()
 
   dec.feed(uint8('1', 0, 0, 0, 4, '2'))
-  assertEquals(dec.decode(), { code: '1', data: null })
+  assertEquals(dec.decode(), { code: '1' })
   assertEquals(dec.decode(), null)
-  assertEquals(dec.data, uint8('2'))
+  // assertEquals(dec.data, uint8('2'))
   dec.feed(uint8(0, 0, 0))
   assertEquals(dec.decode(), null)
-  assertEquals(dec.data, uint8('2', 0, 0, 0))
+  // assertEquals(dec.data, uint8('2', 0, 0, 0))
   dec.feed(uint8(4))
-  assertEquals(dec.data, uint8('2', 0, 0, 0, 4))
-  assertEquals(dec.decode(), { code: '2', data: null })
+  // assertEquals(dec.data, uint8('2', 0, 0, 0, 4))
+  assertEquals(dec.decode(), { code: '2' })
   assertEquals(dec.decode(), null)
-  assertEquals(dec.data, uint8())
+  // assertEquals(dec.data, uint8())
 
   dec.feed(uint8('R', 0, 0, 0, 8, 0))
   assertEquals(dec.decode(), null)
   dec.feed(uint8(0, 0))
   assertEquals(dec.decode(), null)
   dec.feed(uint8(0, 'S'))
-  assertEquals(dec.decode(), {
-    code: 'R',
-    data: { code: 0, data: null },
-  })
+  assertEquals(dec.decode(), { code: 'R', data: { code: 0 } })
   assertEquals(dec.decode(), null)
-  assertEquals(dec.data, uint8('S'))
+  // assertEquals(dec.data, uint8('S'))
+})
+
+Deno.test('iterator', () => {
+  // prettier-ignore
+  const dec = new PacketDecoder(
+    uint8(
+      '1', 0, 0, 0, 4,
+      '2', 0, 0, 0, 4,
+      'n', 0, 0, 0, 4,
+      'C', 0, 0, 0, 11, 'SELECT', 0,
+      '3', 0, 0, 0, 4,
+      'Z', 0, 0, 0, 5, 'I'
+    )
+  )
+
+  assertEquals(
+    [...dec],
+    [
+      { code: '1' },
+      { code: '2' },
+      { code: 'n' },
+      { code: 'C', data: 'SELECT' },
+      { code: '3' },
+      { code: 'Z', data: 'I' },
+    ]
+  )
 })

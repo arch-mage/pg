@@ -1,105 +1,87 @@
-import { MessageFields, BackendPacket } from './types.ts'
+import type { Authentication, BackendPacket } from './decoder/packet-decoder.ts'
 
-export class ProtocolError extends Error {
+export class EncodeError extends Error {
   constructor(message: string, cause?: unknown) {
     super(message, { cause })
     this.name = this.constructor.name
   }
 }
 
-export class EncodeError extends ProtocolError {
+export class UnrecognizedFrontendPacket extends EncodeError {
+  readonly code: string
+
+  constructor(code: string, cause?: string) {
+    super(`unrecognized frontend packet: ${code}`, cause)
+    this.code = code
+  }
+}
+
+export class DecodeError extends Error {
   constructor(message: string, cause?: unknown) {
-    super(message, cause)
+    super(message, { cause })
+    this.name = this.constructor.name
   }
 }
 
-export class DecodeError extends ProtocolError {
-  constructor(message: string, cause?: unknown) {
-    super(message, cause)
+export class UnrecognizedBackendPacket extends DecodeError {
+  readonly code: string
+
+  constructor(code: string, cause?: unknown) {
+    super(`unrecognized backend packet: ${code}`, cause)
+    this.code = code
   }
 }
 
-export class UnrecognizedFormatCodeError extends DecodeError {
-  readonly format: number
-
-  constructor(format: number) {
-    super(`unrecognized format code: ${format}`)
-    this.format = format
+export class UnrecognizedAuth extends DecodeError {
+  readonly code: number
+  constructor(code: number, cause?: unknown) {
+    super(`unrecognized auth response: ${code}`, { cause })
+    this.code = code
   }
 }
 
-export class UnrecognizedReadyStateError extends DecodeError {
-  readonly readyState: string
-
-  constructor(readyState: string) {
-    super(`unrecognized ready state: ${readyState}`)
-    this.readyState = readyState
+export class UnrecognizedFormatCode extends DecodeError {
+  readonly code: number
+  constructor(code: number, cause?: unknown) {
+    super(`unrecognized format code: ${code}`, { cause })
+    this.code = code
   }
 }
 
-export class UnrecognizedResponseError extends DecodeError {
-  readonly received: string
-
-  constructor(received: string) {
-    super(`unrecognized server response: ${received}`)
-    this.received = received
+export class UnrecognizedReadyState extends DecodeError {
+  readonly code: string
+  constructor(code: string, cause?: unknown) {
+    super(`unrecognized ready state: ${code}`, { cause })
+    this.code = code
   }
 }
 
-export class UnexpectedResponseError extends DecodeError {
-  readonly received: BackendPacket
-  readonly expected?: BackendPacket['code']
-
-  constructor(received: BackendPacket, expected?: BackendPacket['code']) {
-    const message =
-      typeof expected === 'string'
-        ? `unexpected server response: ${received.code}. expected: ${expected}`
-        : `unexpected server response: ${received.code}`
-    super(message)
-    this.received = received
-    if (typeof expected === 'string') {
-      this.expected = expected
-    }
+export class UnexpectedBackendPacket extends DecodeError {
+  readonly packet: BackendPacket
+  readonly expect: string[]
+  constructor(packet: BackendPacket, expect: string[], cause?: unknown) {
+    super(
+      `unexpected backend packet: ${packet.code}. expected: ${expect.join(
+        ', '
+      )}`,
+      cause
+    )
+    this.packet = packet
+    this.expect = expect
   }
 }
 
-export class UnexpectedAuthCodeError extends DecodeError {
-  readonly received: number
-  readonly expected?: number
-
-  constructor(received: number, expected?: number) {
-    const message =
-      typeof expected === 'string'
-        ? `unexpected auth response: ${received}. expected: ${expected}`
-        : `unexpected auth response: ${received}`
-    super(message)
-    this.received = received
-    this.expected = expected
+export class UnexpectedAuth extends DecodeError {
+  readonly data: Authentication['data']
+  readonly expect: number
+  constructor(data: Authentication['data'], expect: number, cause?: unknown) {
+    super(`unexpected auth response: ${data}. expected: ${expect}`, { cause })
+    this.data = data
+    this.expect = expect
   }
 }
 
-export class ParserNotImplemented extends DecodeError {
-  readonly oid: number
-  readonly mode: 'text' | 'binary'
-  constructor(mode: 'text' | 'binary', oid: number, cause?: unknown) {
-    const message = `${mode} parser is not implemented for type ${oid}`
-    super(message, cause)
-    this.oid = oid
-    this.mode = mode
-  }
-}
-
-export class SASLError extends ProtocolError {
-  constructor(message: string) {
-    super(message)
-  }
-}
-
-export class ConnectionClosedError extends ProtocolError {
-  constructor() {
-    super('no data: connection closed')
-  }
-}
+export class SASLError extends DecodeError {}
 
 export class PostgresError extends Error {
   readonly code: string
@@ -120,7 +102,7 @@ export class PostgresError extends Error {
   readonly line?: string
   readonly routine?: string
 
-  constructor(packet: MessageFields) {
+  constructor(packet: Record<string, string>) {
     super()
     this.code = packet.C
     this.message = packet.M
@@ -138,5 +120,11 @@ export class PostgresError extends Error {
     this.file = packet.F
     this.line = packet.L
     this.routine = packet.R
+  }
+}
+
+export class NoDataReceived extends Error {
+  constructor(cause?: unknown) {
+    super('no data received', { cause })
   }
 }
