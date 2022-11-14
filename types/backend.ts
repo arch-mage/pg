@@ -102,3 +102,12 @@ export type BackendPacket =
   | PortalSuspended
   | ParameterDescription
   | ReadyForQuery
+
+// CopyBothResponse (B)
+// CopyInResponse (B)
+// CopyOutResponse (B)
+// EmptyQueryResponse (B)
+// FunctionCallResponse (B)
+// NegotiateProtocolVersion (B)
+// CopyData (F & B)
+// CopyDone (F & B)

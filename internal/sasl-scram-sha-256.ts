@@ -1,15 +1,15 @@
 import { putVarnum, base64, NodeBuffer } from '../deps.ts'
 import { SASLError } from '../errors.ts'
-import { IProtocol } from '../types.ts'
+import { Protocol } from '../types.ts'
 import { extract, extractAuth, must } from './assert.ts'
 import { hmac256, pbkdf2, xorBuffer } from './crypto.ts'
 
 export async function sasl(
-  proto: IProtocol,
+  proto: Protocol,
   password: string,
   clientNonce: string
 ) {
-  await proto.encode({ code: 'p', data: encodeInit(clientNonce) }).send()
+  await proto.send({ code: 'p', data: encodeInit(clientNonce) })
   const serverFirstMessage = await proto
     .recv()
     .then(extract('R'))
@@ -66,7 +66,7 @@ export async function sasl(
 
   // prettier-ignore
   const clientFinalMessage = clientFinalMessageWithoutProof + ',p=' + clientProof
-  await proto.encode({ code: 'p', data: enc.encode(clientFinalMessage) }).send()
+  await proto.send({ code: 'p', data: enc.encode(clientFinalMessage) })
 
   const serverFinalMessage = await proto
     .recv()

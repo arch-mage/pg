@@ -1,6 +1,6 @@
 import { PostgresError } from '../errors.ts'
 import { Encoder } from '../protocol/encoder.ts'
-import { Protocol } from '../protocol/mod.ts'
+import { ReadWriteProtocol } from '../protocol/mod.ts'
 import {
   assertEquals,
   assertRejects,
@@ -13,7 +13,7 @@ import { Conn } from './mod.ts'
 
 Deno.test('query not awaited', () => {
   const buff = new TestBuffer()
-  const proto = Protocol.fromConn(buff)
+  const proto = ReadWriteProtocol.fromConn(buff)
   const conn = new Conn(proto)
   conn.query('SELECT')
 
@@ -43,7 +43,7 @@ Deno.test('query awaited', async () => {
     // ready for query
     .str('Z').int32(5).str('I')
   buff.reader.writeSync(data.buff as Uint8Array)
-  const proto = Protocol.fromConn(buff)
+  const proto = ReadWriteProtocol.fromConn(buff)
   const conn = new Conn(proto)
   assertEquals(
     (await conn.query('SELECT 1 as id, null as no')) as [
@@ -102,7 +102,7 @@ Deno.test('query iterated', async () => {
     // ready for query
     .str('Z').int32(5).str('I')
   buff.reader.writeSync(data.buff as Uint8Array)
-  const proto = Protocol.fromConn(buff)
+  const proto = ReadWriteProtocol.fromConn(buff)
   const conn = new Conn(proto)
   const query = conn.query('SELECT 1 as id, null as no')
   const desc = [
@@ -146,7 +146,7 @@ Deno.test('awaited error', async () => {
     // ready for query
     .str('Z').int32(5).str('I')
   buff.reader.writeSync(data.buff as Uint8Array)
-  const proto = Protocol.fromConn(buff)
+  const proto = ReadWriteProtocol.fromConn(buff)
   const conn = new Conn(proto)
   const task = conn.query('SELECT')
   const onClose = spy(function onClose() {})
@@ -165,7 +165,7 @@ Deno.test('iterated error', async () => {
     // ready for query
     .str('Z').int32(5).str('I')
   buff.reader.writeSync(data.buff as Uint8Array)
-  const proto = Protocol.fromConn(buff)
+  const proto = ReadWriteProtocol.fromConn(buff)
   const conn = new Conn(proto)
   const task = conn.query('SELECT')
   const onClose = spy(function onClose() {})

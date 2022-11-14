@@ -1,6 +1,6 @@
 import { UnexpectedResponseError } from '../errors.ts'
 import { extract, mustPacket } from '../internal/assert.ts'
-import { Row, Param, IProtocol, ColumnDescription } from '../types.ts'
+import { Row, Param, Protocol, ColumnDescription } from '../types.ts'
 
 export const enum TaskStateCode {
   Fresh,
@@ -36,14 +36,14 @@ export class Task
     PromiseLike<[Row[], ColumnDescription[]] | null>,
     AsyncIterableIterator<[Row, ColumnDescription[]]>
 {
-  readonly #proto: IProtocol
+  readonly #proto: Protocol
   readonly #listeners: Array<() => void>
   readonly #turn: Promise<void>
 
   #state: TaskState
 
   constructor(
-    proto: IProtocol,
+    proto: Protocol,
     query: string,
     params: Param[],
     turn: Promise<void>
@@ -73,9 +73,9 @@ export class Task
     const { query, params } = this.#state
     this.#state = { code: TaskStateCode.Initializing }
 
-    await this.#proto
-      .encode({ code: 'P', data: { name: '', query, formats: [] } })
-      .encode({
+    await this.#proto.send(
+      { code: 'P', data: { name: '', query, formats: [] } },
+      {
         code: 'B',
         data: {
           portal: '',
@@ -84,12 +84,12 @@ export class Task
           params,
           resultFormats: [1],
         },
-      })
-      .encode({ code: 'D', data: { kind: 'P', name: '' } })
-      .encode({ code: 'E', data: { name: '', max: 0 } })
-      .encode({ code: 'C', data: { kind: 'P', name: '' } })
-      .encode({ code: 'S' })
-      .send()
+      },
+      { code: 'D', data: { kind: 'P', name: '' } },
+      { code: 'E', data: { name: '', max: 0 } },
+      { code: 'C', data: { kind: 'P', name: '' } },
+      { code: 'S' }
+    )
 
     await this.#proto.recv().then(extract('1'))
     await this.#proto.recv().then(extract('2'))
@@ -139,8 +139,9 @@ export class Task
 
       throw new UnexpectedResponseError(packet)
     } catch (error) {
-      for await (const packet of this.#proto) {
-        if (packet.code === 'Z') {
+      for (;;) {
+        const packet = await this.#proto.recv()
+        if (!packet || packet.code === 'Z') {
           break
         }
       }
@@ -160,28 +161,27 @@ export class Task
       }
 
       const rows: Row[] = []
-      for await (const packet of this.#proto) {
+      for (;;) {
+        const packet = await this.#proto.recv().then(mustPacket)
         if (packet.code === 'C') {
-          break
+          await this.#proto.recv().then(extract('3'))
+          await this.#proto.recv().then(extract('Z'))
+          this.#close()
+          return [rows, state.fields]
         }
-
         if (packet.code !== 'D') {
           throw new UnexpectedResponseError(packet)
         }
-
         if (packet.data.length !== state.fields.length) {
           throw new Error('mismatch number of field')
         }
         rows.push(packet.data)
         continue
       }
-      await this.#proto.recv().then(extract('3'))
-      await this.#proto.recv().then(extract('Z'))
-      this.#close()
-      return [rows, state.fields]
     } catch (error) {
-      for await (const packet of this.#proto) {
-        if (packet.code === 'Z') {
+      for (;;) {
+        const packet = await this.#proto.recv()
+        if (!packet || packet.code === 'Z') {
           break
         }
       }

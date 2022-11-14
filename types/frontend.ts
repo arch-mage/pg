@@ -83,3 +83,13 @@ export type FrontendPacket =
   | Startup
   | Sync
   | Terminate
+
+// CancelRequest (F)
+// CopyFail (F)
+// Flush (F)
+// FunctionCall (F)
+// GSSENCRequest (F)
+// GSSResponse (F)
+// SSLRequest (F)
+// CopyData (F & B)
+// CopyDone (F & B)

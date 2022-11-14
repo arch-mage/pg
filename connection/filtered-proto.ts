@@ -1,21 +1,21 @@
 import {
   BackendPacket,
   FrontendPacket,
-  IProtocol,
+  Protocol,
   NoticeListener,
   NotificationListener,
   ParameterStatusListener,
 } from '../types.ts'
 
-export class FilteredProtocol implements IProtocol {
-  #proto: IProtocol
+export class FilteredProtocol implements Protocol {
+  #proto: Protocol
   #listeners: {
     A: Array<NotificationListener>
     N: Array<NoticeListener>
     S: Array<ParameterStatusListener>
   }
 
-  constructor(proto: IProtocol) {
+  constructor(proto: Protocol) {
     while (proto instanceof FilteredProtocol) proto = proto.#proto
     this.#proto = proto
     this.#listeners = {
@@ -26,7 +26,11 @@ export class FilteredProtocol implements IProtocol {
   }
 
   async recv(): Promise<BackendPacket | null> {
-    for await (const packet of this.#proto) {
+    for (;;) {
+      const packet = await this.#proto.recv()
+      if (!packet) {
+        return null
+      }
       if (packet.code === 'A') {
         const {
           data: { processId, channel, payload },
@@ -46,20 +50,10 @@ export class FilteredProtocol implements IProtocol {
       }
       return packet
     }
-    return null
   }
-  encode(packet: FrontendPacket): this {
-    this.#proto.encode(packet)
-    return this
-  }
-  send(): Promise<void> {
-    return this.#proto.send()
-  }
-  [Symbol.asyncIterator](): this {
-    return this
-  }
-  next(): Promise<IteratorResult<BackendPacket, null>> {
-    return this.#proto.next()
+
+  send(...packets: FrontendPacket[]): Promise<void> {
+    return this.#proto.send(...packets)
   }
 
   onNotification(listener: NotificationListener): () => void {

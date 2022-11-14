@@ -5,8 +5,7 @@ export * from './frontend.ts'
 import type { BackendPacket } from './backend.ts'
 import type { FrontendPacket } from './frontend.ts'
 
-export interface IProtocol extends AsyncIterableIterator<BackendPacket> {
+export interface Protocol {
   recv(): Promise<BackendPacket | null>
-  encode(packet: FrontendPacket): this
-  send(): Promise<void>
+  send(...packets: FrontendPacket[]): Promise<void>
 }
