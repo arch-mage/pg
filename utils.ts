@@ -1,3 +1,5 @@
+import { PostgresError, UnexpectedBackendPacket } from './errors.ts'
+
 export function hasProp<P extends string | number | symbol>(
   value: unknown,
   prop: P
@@ -34,11 +36,6 @@ export function concat(...buff: Uint8Array[]): Uint8Array {
   return result
 }
 
-export function copy(source: Uint8Array, target: Uint8Array, pos?: number) {
-  target.set(source, pos)
-  return target
-}
-
 export function putInt32(buffer: Uint8Array, num: number) {
   const buff = buffer.subarray(0, 4)
   const view = new DataView(buff.buffer)
@@ -49,4 +46,21 @@ export function noop(): void
 export function noop<T>(value: T): T
 export function noop<T>(value?: T): T | void {
   return value
+}
+
+export function compose<A, B, C>(
+  fn2: (value: B) => C,
+  fn1: (value: A) => B
+): (value: A) => C {
+  return (value) => fn2(fn1(value))
+}
+
+export function maybeBackendError(error: unknown): unknown {
+  if (!(error instanceof UnexpectedBackendPacket)) {
+    return error
+  }
+  if (error.packet.code !== 'E') {
+    return error
+  }
+  return new PostgresError(error.packet.data)
 }

@@ -387,6 +387,36 @@ Deno.test('iterator', () => {
   )
 })
 
+Deno.test('copyInResponse', () => {
+  assertThrows(
+    () => {
+      new PacketDecoder(
+        uint8([71, 0, 0, 0, 13, 2, 0, 3, 0, 0, 0, 0, 0, 0])
+      ).decode()
+    },
+    UnrecognizedFormatCode,
+    'unrecognized format code: 2'
+  )
+  assertThrows(
+    () => {
+      new PacketDecoder(
+        uint8([71, 0, 0, 0, 13, 0, 0, 3, 0, 2, 0, 0, 0, 0])
+      ).decode()
+    },
+    UnrecognizedFormatCode,
+    'unrecognized format code: 2'
+  )
+  assertEquals(
+    new PacketDecoder(
+      uint8([71, 0, 0, 0, 13, 0, 0, 3, 0, 0, 0, 0, 0, 0])
+    ).decode(),
+    {
+      code: 'G',
+      data: { format: 0, formats: [0, 0, 0] },
+    }
+  )
+})
+
 Deno.test('copyOutResponse', () => {
   assertThrows(
     () => {

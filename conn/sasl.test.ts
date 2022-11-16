@@ -1,7 +1,8 @@
 import { BackendPacket } from '../decoder/packet-decoder.ts'
 import { base64 } from '../deps.ts'
 import { FrontendPacket } from '../encoder/packet-encoder.ts'
-import { packets } from '../testing.ts'
+import { SASLError, UnexpectedAuth } from '../errors.ts'
+import { assertRejects, packets } from '../testing.ts'
 import { hmac256, pbkdf2, sasl } from './sasl.ts'
 
 async function createPackets(
@@ -58,7 +59,7 @@ Deno.test('sasl', async () => {
   for (let i = 1; i <= 100; ++i) {
     const password = randomString()
     const clientNonce = randomString()
-    const devnil = new WritableStream<FrontendPacket>()
+    const devnull = new WritableStream<FrontendPacket[]>()
     const reader = packets(
       await createPackets(
         password,
@@ -68,6 +69,62 @@ Deno.test('sasl', async () => {
         i
       )
     )
-    await sasl(devnil.getWriter(), reader.getReader(), password, clientNonce)
+    await sasl(devnull.getWriter(), reader.getReader(), password, clientNonce)
   }
+})
+
+Deno.test('sasl errors', async () => {
+  function saslTest(packs: BackendPacket[]) {
+    const devnull = new WritableStream<FrontendPacket[]>()
+    const reader = packets(packs)
+    return sasl(devnull.getWriter(), reader.getReader(), 'password', 'client')
+  }
+
+  function pack(code: 11 | 12, data: string): BackendPacket {
+    return { code: 'R', data: { code, data } }
+  }
+
+  await assertRejects(
+    () => saslTest([pack(11, 's=salt,i=4096')]),
+    SASLError,
+    'missing server nonce'
+  )
+
+  await assertRejects(
+    () => saslTest([pack(11, 'r=clientserver,i=4096')]),
+    SASLError,
+    'missing server salt'
+  )
+
+  await assertRejects(
+    () => saslTest([pack(11, 'r=clientserver,s=salt')]),
+    SASLError,
+    'missing iteration count'
+  )
+
+  await assertRejects(
+    () => saslTest([pack(11, 'r=server,s=salt,i=4096')]),
+    SASLError,
+    'invalid server nonce'
+  )
+
+  await assertRejects(
+    () => saslTest([pack(11, 'r=client,s=salt,i=4096')]),
+    SASLError,
+    'invalid server nonce'
+  )
+
+  await assertRejects(
+    () =>
+      saslTest([pack(11, 'r=clientserver,s=salt,i=4096'), pack(11, 'v=wew')]),
+    UnexpectedAuth,
+    'unexpected auth response: 11. expected: 12'
+  )
+
+  await assertRejects(
+    () =>
+      saslTest([pack(11, 'r=clientserver,s=salt,i=4096'), pack(12, 'v=wew')]),
+    SASLError,
+    'mismatch server signature'
+  )
 })

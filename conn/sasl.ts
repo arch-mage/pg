@@ -7,13 +7,13 @@ import { hasProp, putInt32 } from '../utils.ts'
 import { extract } from './extract.ts'
 
 export async function sasl(
-  writer: WritableStreamDefaultWriter<FrontendPacket>,
+  writer: WritableStreamDefaultWriter<FrontendPacket[]>,
   reader: ReadableStreamDefaultReader<BackendPacket>,
   password: string,
   nonce: string
 ) {
   await writer.ready
-  await writer.write({ code: 'p', data: encodeInit(nonce) })
+  await writer.write([{ code: 'p', data: encodeInit(nonce) }])
   const serverFirstMessage = extractAuth(11, extract('R', await reader.read()))
   const attrs = new Map(
     serverFirstMessage
@@ -73,7 +73,7 @@ export async function sasl(
 
   // prettier-ignore
   const clientFinalMessage = clientFinalMessageWithoutProof + ',p=' + clientProof
-  await writer.write({ code: 'p', data: enc.encode(clientFinalMessage) })
+  await writer.write([{ code: 'p', data: enc.encode(clientFinalMessage) }])
 
   const serverFinalMessage = extractAuth(12, extract('R', await reader.read()))
 
@@ -143,12 +143,12 @@ export async function hmac256(password: Uint8Array, message: Uint8Array) {
 }
 
 function xorBuffer(a: Uint8Array, b: Uint8Array) {
-  if (a.length !== b.length) {
-    throw new TypeError('mismatch array length')
-  }
-  if (a.length === 0) {
-    throw new TypeError('empty array')
-  }
+  // if (a.length !== b.length) {
+  //   throw new TypeError('mismatch array length')
+  // }
+  // if (a.length === 0) {
+  //   throw new TypeError('empty array')
+  // }
 
   const c = new Uint8Array(a.length)
   for (let i = 0; i < a.length; ++i) {

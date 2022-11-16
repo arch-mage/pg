@@ -16,6 +16,15 @@ export class UnrecognizedFrontendPacket extends EncodeError {
   }
 }
 
+export class UnrecognizedRequestCode extends EncodeError {
+  readonly code: number
+
+  constructor(code: number, cause?: string) {
+    super(`unrecognized request code: ${code}`, cause)
+    this.code = code
+  }
+}
+
 export class DecodeError extends Error {
   constructor(message: string, cause?: unknown) {
     super(message, { cause })
@@ -75,7 +84,8 @@ export class UnexpectedAuth extends DecodeError {
   readonly data: Authentication['data']
   readonly expect: number
   constructor(data: Authentication['data'], expect: number, cause?: unknown) {
-    super(`unexpected auth response: ${data}. expected: ${expect}`, { cause })
+    const code = data.code
+    super(`unexpected auth response: ${code}. expected: ${expect}`, { cause })
     this.data = data
     this.expect = expect
   }

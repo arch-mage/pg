@@ -1,18 +1,36 @@
-import { UnrecognizedFrontendPacket } from '../errors.ts'
+import {
+  UnrecognizedFrontendPacket,
+  UnrecognizedRequestCode,
+} from '../errors.ts'
 import { assertEquals, assertThrows, uint8 } from '../testing.ts'
 import { PacketEncoder } from './packet-encoder.ts'
 
-Deno.test('startup', () => {
+Deno.test('request', () => {
   const expect = uint8([
-    0, 0, 0, 31, 0, 3, 0, 0, 117, 115, 101, 114, 0, 117, 115, 101, 114, 0, 100,
-    97, 116, 97, 98, 97, 115, 101, 0, 100, 98, 0, 0,
+    0, 0, 0, 8, 4, 210, 22, 47, 0, 0, 0, 31, 0, 3, 0, 0, 117, 115, 101, 114, 0,
+    117, 115, 101, 114, 0, 100, 97, 116, 97, 98, 97, 115, 101, 0, 100, 98, 0, 0,
+    0, 0, 0, 16, 4, 210, 22, 46, 0, 0, 0, 1, 0, 0, 0, 2,
   ])
-  assertEquals(
-    new PacketEncoder().encode({
-      code: null,
+  const enc = new PacketEncoder()
+  enc.encode({ code: null, data: { code: 80877103 } })
+  enc.encode({
+    code: null,
+    data: {
+      code: 196608,
       data: { user: 'user', params: { database: 'db' } },
-    }).buff,
-    expect
+    },
+  })
+  enc.encode({
+    code: null,
+    data: { code: 80877102, data: { process: 1, secret: 2 } },
+  })
+  assertEquals(enc.buff, expect)
+
+  assertThrows(
+    // deno-lint-ignore no-explicit-any
+    () => enc.encode({ code: null, data: { code: 1 as any } }),
+    UnrecognizedRequestCode,
+    'unrecognized request code: 1'
   )
 })
 
@@ -93,6 +111,32 @@ Deno.test('query', () => {
     new PacketEncoder().encode({ code: 'Q', data: 'SELECT' }).buff,
     expect
   )
+})
+
+Deno.test('copyData', () => {
+  const expect = uint8([100, 0, 0, 0, 8, 1, 2, 3, 4])
+  assertEquals(
+    new PacketEncoder().encode({ code: 'd', data: uint8(1, 2, 3, 4) }).buff,
+    expect
+  )
+})
+
+Deno.test('copyDone', () => {
+  const expect = uint8([99, 0, 0, 0, 4])
+  assertEquals(new PacketEncoder().encode({ code: 'c' }).buff, expect)
+})
+
+Deno.test('copyFail', () => {
+  const expect = uint8([102, 0, 0, 0, 6, 33, 0])
+  assertEquals(
+    new PacketEncoder().encode({ code: 'f', data: '!' }).buff,
+    expect
+  )
+})
+
+Deno.test('flush', () => {
+  const expect = uint8([72, 0, 0, 0, 4])
+  assertEquals(new PacketEncoder().encode({ code: 'H' }).buff, expect)
 })
 
 Deno.test('saslInit', () => {

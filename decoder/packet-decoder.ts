@@ -101,6 +101,23 @@ export class PacketDecoder extends Decoder {
       }
       return { code, data }
     }
+    if (code === 'G') {
+      // CopyInResponse (B)
+      const format = this.int8()
+      if (format !== 0 && format !== 1) {
+        throw new UnrecognizedFormatCode(format)
+      }
+      const n = this.int16()
+      const formats: Array<0 | 1> = []
+      for (let i = 0; i < n; ++i) {
+        const format = this.int16()
+        if (format !== 0 && format !== 1) {
+          throw new UnrecognizedFormatCode(format)
+        }
+        formats.push(format)
+      }
+      return { code, data: { format, formats } }
+    }
     if (code === 'H') {
       // CopyOutResponse (B)
       const format = this.int8()
@@ -227,7 +244,6 @@ export class PacketDecoder extends Decoder {
     }
 
     // CopyBothResponse (B)
-    // CopyInResponse (B)
     // EmptyQueryResponse (B)
     // FunctionCallResponse (B)
     // NegotiateProtocolVersion (B)
@@ -287,6 +303,14 @@ export interface CopyData {
 export interface ErrorResponse {
   code: 'E'
   data: Record<string, string>
+}
+
+export interface CopyInResponse {
+  code: 'G'
+  data: {
+    format: 0 | 1
+    formats: Array<0 | 1>
+  }
 }
 
 export interface CopyOutResponse {
@@ -358,6 +382,7 @@ export type BackendPacket =
   | DataRow
   | CopyData
   | ErrorResponse
+  | CopyInResponse
   | CopyOutResponse
   | BackendKeyData
   | NoticeResponse

@@ -1,89 +1,67 @@
+import { RowDescription } from '../decoder/packet-decoder.ts'
 import { FrontendPacket } from '../encoder/packet-encoder.ts'
-import { BackendPacket, RowDescription } from '../decoder/packet-decoder.ts'
+import { UnexpectedBackendPacket } from '../errors.ts'
+import { compose, maybeBackendError, noop } from '../utils.ts'
 import { extract } from './extract.ts'
-import { PostgresError, UnexpectedBackendPacket } from '../errors.ts'
+import { Stream } from './stream.ts'
 
-type Field = RowDescription['data'][0]
+type RawValue = Uint8Array | null
 
-type Param = string | Uint8Array | null
+type Field = RowDescription['data'][number]
 
-const enum StateCode {
-  Fresh,
-  Init,
-  Running,
-  Closed,
-}
-
-interface StateFresh {
-  code: StateCode.Fresh
+interface StateIdle {
+  code: 'idle'
   query: string
-  params: Param[]
+  params: RawValue[]
 }
 
 interface StateInit {
-  code: StateCode.Init
-  reader: ReadableStreamDefaultReader<BackendPacket>
-  writer: WritableStreamDefaultWriter<FrontendPacket>
+  code: 'init'
+  stream: Stream
 }
 
 interface StateRunning {
-  code: StateCode.Running
+  code: 'running'
+  stream: Stream
   fields: Field[]
-  reader: ReadableStreamDefaultReader<BackendPacket>
-  writer: WritableStreamDefaultWriter<FrontendPacket>
 }
 
 interface StateClosed {
-  code: StateCode.Closed
+  code: 'closed'
+  state: null | 'I' | 'E' | 'T'
 }
 
-type State = StateFresh | StateInit | StateRunning | StateClosed
+type State = StateIdle | StateInit | StateRunning | StateClosed
 
-type Acquire = () => PromiseLike<
-  readonly [
-    ReadableStreamDefaultReader<BackendPacket>,
-    WritableStreamDefaultWriter<FrontendPacket>
-  ]
->
-
-type Callback = (state: null | 'I' | 'T' | 'E') => void
-
-export class Command<Row> {
-  readonly #turn: Acquire
-  readonly #mapper: (data: [Array<Uint8Array | null>, Field[]]) => Row
-  readonly #callback: Callback
-
+export class Command<T> {
   #state: State
+  #mapper: (value: [RawValue[], Field[]]) => T
+  #stream: Promise<Stream>
 
-  static create<T>(
+  static create(
     query: string,
-    params: Param[],
-    turn: Acquire,
-    mapper: (data: [Array<Uint8Array | null>, Field[]]) => T,
-    callback: Callback
-  ): Command<T> {
+    params: RawValue[],
+    stream: Promise<Stream>
+  ): Command<[RawValue[], Field[]]> {
     return new Command(
-      turn,
-      { code: StateCode.Fresh, query, params },
-      mapper,
-      callback
+      stream,
+      { code: 'idle', query, params },
+      noop<[RawValue[], Field[]]>
     )
   }
 
-  private constructor(
-    turn: Acquire,
+  constructor(
+    stream: Promise<Stream>,
     state: State,
-    mapper: (data: [Array<Uint8Array | null>, Field[]]) => Row,
-    callback: Callback
+    mapper: (value: [RawValue[], Field[]]) => T
   ) {
-    this.#turn = turn
     this.#state = state
     this.#mapper = mapper
-    this.#callback = callback
+    this.#stream = stream
   }
 
-  then<R1 = Row[] | null, R2 = never>(
-    onfulfilled?: ((value: Row[] | null) => R1 | PromiseLike<R1>) | null,
+  then<R1 = T[] | null, R2 = never>(
+    onfulfilled?: ((value: T[] | null) => R1 | PromiseLike<R1>) | null,
     onrejected?: ((reason: unknown) => R2 | PromiseLike<R2>) | null
   ): Promise<R1 | R2> {
     return this.#fetchall().then(onfulfilled, onrejected)
@@ -91,169 +69,178 @@ export class Command<Row> {
 
   catch<R = never>(
     onrejected?: ((reason: unknown) => R | PromiseLike<R>) | null
-  ): Promise<Row[] | R | null> {
+  ): Promise<T[] | R | null> {
     return this.#fetchall().catch(onrejected)
   }
 
-  finally(onfinally?: (() => void) | null): Promise<Row[] | null> {
+  finally(onfinally?: (() => void) | null): Promise<T[] | null> {
     return this.#fetchall().finally(onfinally)
   }
 
-  [Symbol.asyncIterator](): AsyncIterableIterator<Row> {
+  [Symbol.asyncIterator](): this {
     return this
   }
 
-  async next(): Promise<IteratorResult<Row, null>> {
+  async next(): Promise<IteratorResult<T, null>> {
     const value = await this.#fetchone()
     return value ? { done: false, value } : { done: true, value: null }
   }
 
-  async return(): Promise<IteratorResult<Row, null>> {
-    if (this.#state.code !== StateCode.Running) {
-      return {
-        done: true,
-        value: null,
-      }
+  async return(): Promise<IteratorResult<T, null>> {
+    if (this.#state.code === 'init' || this.#state.code === 'running') {
+      this.#close(await this.#exhaust(this.#state.stream))
     }
-    const { reader } = this.#state
-    for (;;) {
-      const { value } = await reader.read()
-      if (!value || value.code === 'Z') {
-        return { done: true, value: this.#close(value?.data ?? null) }
-      }
-    }
+    return { done: true, value: null }
   }
 
-  #close(state: null | 'I' | 'T' | 'E') {
-    if (
-      this.#state.code === StateCode.Running ||
-      this.#state.code === StateCode.Init
-    ) {
-      this.#state.reader.releaseLock()
-      this.#state.writer.releaseLock()
+  map<U>(mapper: (value: T) => U): Command<U> {
+    return new Command(this.#stream, this.#state, compose(mapper, this.#mapper))
+  }
+
+  #close(state: null | 'I' | 'E' | 'T' = null) {
+    if (this.#state.code === 'init' || this.#state.code === 'running') {
+      this.#state.stream.release(state)
     }
-    this.#state = { code: StateCode.Closed }
-    this.#callback(state)
+    this.#state = { code: 'closed', state }
+  }
+
+  async #exhaust(stream: Stream) {
+    for await (const packet of stream) {
+      if (packet.code === 'Z') {
+        return packet.data
+      }
+    }
     return null
   }
 
-  async #send(
-    writer: WritableStreamDefaultWriter<FrontendPacket | FrontendPacket[]>,
-    query: string,
-    params: Param[]
-  ) {
-    const formats = params.map((param) =>
-      param instanceof Uint8Array ? (1 as const) : (0 as const)
-    )
-    await writer.ready
-    await writer.write([
-      { code: 'P', data: { name: '', query, formats: [] } },
-      {
-        code: 'B',
-        data: {
-          portal: '',
-          stmt: '',
-          paramFormats: formats,
-          params: [],
-          resultFormats: formats,
-        },
-      },
-      { code: 'D', data: { kind: 'P', name: '' } },
-      { code: 'E', data: { name: '', max: 0 } },
-      { code: 'C', data: { kind: 'P', name: '' } },
-      { code: 'S' },
-    ])
+  async #send(stream: Stream, query: string, params: RawValue[]) {
+    try {
+      await stream.send([
+        parse(query),
+        bind(params),
+        describe(),
+        execute(),
+        close(),
+        sync(),
+      ])
+    } catch (error) {
+      this.#close()
+      throw error
+    }
   }
 
-  async #init() {
-    if (this.#state.code !== StateCode.Fresh) {
+  async #initialize(): Promise<void> {
+    if (this.#state.code !== 'idle') {
       return
     }
-    const [reader, writer] = await this.#turn()
     const { query, params } = this.#state
-    this.#state = { code: StateCode.Init, reader, writer }
-
+    const stream = await this.#stream
+    this.#state = { code: 'init', stream }
+    await this.#send(stream, query, params)
     try {
-      await this.#send(writer, query, params)
-      extract('1', await reader.read())
-      extract('2', await reader.read())
-      const packet = extract(await reader.read())
+      extract('1', await stream.next())
+      extract('2', await stream.next())
+      const packet = extract(await stream.next())
+
       if (packet.code === 'n') {
-        extract('C', await reader.read())
-        extract('3', await reader.read())
-        return this.#close(extract('Z', await reader.read()))
-      } else if (packet.code === 'T') {
-        this.#state = {
-          code: StateCode.Running,
-          fields: packet.data,
-          reader,
-          writer,
-        }
-      } else {
-        throw new UnexpectedBackendPacket(packet, ['T', 'n'])
+        extract('C', await stream.next())
+        extract('3', await stream.next())
+        return this.#close(extract('Z', await stream.next()))
       }
+
+      if (packet.code === 'T') {
+        this.#state = { code: 'running', stream, fields: packet.data }
+        return
+      }
+
+      throw new UnexpectedBackendPacket(packet, ['T', 'n'])
     } catch (error) {
-      return this.#onerror(error, reader)
+      this.#close(await this.#exhaust(stream))
+      throw maybeBackendError(error)
     }
   }
 
-  async #onerror(
-    error: unknown,
-    reader: ReadableStreamDefaultReader<BackendPacket>
-  ): Promise<never> {
-    for (;;) {
-      const { value } = await reader.read()
-      if (!value || value.code === 'Z') {
-        this.#close(value?.data ?? null)
-        break
-      }
-    }
-
-    if (error instanceof UnexpectedBackendPacket && error.packet.code === 'E') {
-      throw new PostgresError(error.packet.data)
-    }
-    throw error
-  }
-
-  async #fetchall(): Promise<Row[] | null> {
-    await this.#init()
-
-    if (this.#state.code !== StateCode.Running) {
+  async #fetchall(): Promise<T[] | null> {
+    await this.#initialize()
+    if (this.#state.code !== 'running') {
       return null
     }
-
-    const rows = []
-    for await (const row of this) {
-      rows.push(row)
-    }
-
-    return rows
-  }
-
-  async #fetchone(): Promise<Row | null> {
-    await this.#init()
-
-    if (this.#state.code !== StateCode.Running) {
-      return null
-    }
-
-    const { reader, fields } = this.#state
-
+    const { stream, fields } = this.#state
     try {
-      const packet = extract(await reader.read())
-      if (packet.code === 'C') {
-        extract('3', await reader.read())
-        const state = extract('Z', await reader.read())
-        return this.#close(state)
-      }
+      const rows: T[] = []
+      for await (const packet of stream) {
+        if (packet.code === 'C') {
+          extract('3', await stream.next())
+          break
+        }
+        if (packet.code === 'D') {
+          rows.push(this.#mapper([packet.data, fields]))
+          continue
+        }
 
+        throw new UnexpectedBackendPacket(packet, ['C', 'D'])
+      }
+      this.#close(extract('Z', await stream.next()))
+      return rows
+    } catch (error) {
+      this.#close(await this.#exhaust(stream))
+      throw maybeBackendError(error)
+    }
+  }
+
+  async #fetchone(): Promise<T | null> {
+    await this.#initialize()
+    if (this.#state.code !== 'running') {
+      return null
+    }
+    const { stream, fields } = this.#state
+    try {
+      const packet = await stream.recv()
       if (packet.code === 'D') {
         return this.#mapper([packet.data, fields])
       }
-
+      if (packet.code === 'C') {
+        extract('3', await stream.next())
+        this.#close(extract('Z', await stream.next()))
+        return null
+      }
       throw new UnexpectedBackendPacket(packet, ['C', 'D'])
     } catch (error) {
-      return this.#onerror(error, reader)
+      this.#close(await this.#exhaust(stream))
+      throw maybeBackendError(error)
     }
   }
+}
+
+function parse(query: string, name = ''): FrontendPacket {
+  return { code: 'P', data: { name, query, formats: [] } }
+}
+
+function bind(params: RawValue[], stmt = ''): FrontendPacket {
+  return {
+    code: 'B',
+    data: {
+      stmt,
+      portal: '',
+      params,
+      paramFormats: [],
+      resultFormats: [],
+    },
+  }
+}
+
+function describe(): FrontendPacket {
+  return { code: 'D', data: { kind: 'P', name: '' } }
+}
+
+function execute(): FrontendPacket {
+  return { code: 'E', data: { max: 0, name: '' } }
+}
+
+function close(): FrontendPacket {
+  return { code: 'C', data: { kind: 'P', name: '' } }
+}
+
+function sync(): FrontendPacket {
+  return { code: 'S' }
 }
