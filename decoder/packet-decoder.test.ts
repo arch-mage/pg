@@ -386,3 +386,59 @@ Deno.test('iterator', () => {
     ]
   )
 })
+
+Deno.test('copyOutResponse', () => {
+  assertThrows(
+    () => {
+      new PacketDecoder(
+        uint8([72, 0, 0, 0, 13, 2, 0, 3, 0, 0, 0, 0, 0, 0])
+      ).decode()
+    },
+    UnrecognizedFormatCode,
+    'unrecognized format code: 2'
+  )
+  assertThrows(
+    () => {
+      new PacketDecoder(
+        uint8([72, 0, 0, 0, 13, 0, 0, 3, 0, 2, 0, 0, 0, 0])
+      ).decode()
+    },
+    UnrecognizedFormatCode,
+    'unrecognized format code: 2'
+  )
+  assertEquals(
+    new PacketDecoder(
+      uint8([72, 0, 0, 0, 13, 0, 0, 3, 0, 0, 0, 0, 0, 0])
+    ).decode(),
+    {
+      code: 'H',
+      data: { format: 0, formats: [0, 0, 0] },
+    }
+  )
+})
+
+Deno.test('copyData', () => {
+  const dec = new PacketDecoder(
+    uint8([
+      100, 0, 0, 0, 15, 49, 9, 65, 115, 115, 101, 116, 9, 92, 78, 10, 100, 0, 0,
+      0, 19, 49, 48, 49, 9, 83, 105, 109, 112, 97, 110, 97, 110, 9, 49, 10,
+    ])
+  )
+
+  assertEquals(dec.decode(), {
+    code: 'd',
+    data: uint8([49, 9, 65, 115, 115, 101, 116, 9, 92, 78, 10]),
+  })
+  assertEquals(dec.decode(), {
+    code: 'd',
+    data: uint8([
+      49, 48, 49, 9, 83, 105, 109, 112, 97, 110, 97, 110, 9, 49, 10,
+    ]),
+  })
+})
+
+Deno.test('copyDone', () => {
+  const dec = new PacketDecoder(uint8('c', [0, 0, 0, 4]))
+
+  assertEquals(dec.decode(), { code: 'c' })
+})

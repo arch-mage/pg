@@ -111,12 +111,17 @@ export class Decoder {
     return this.#varbig('uint64')
   }
 
-  bytes(size: number): Uint8Array {
+  bytes(size?: number): Uint8Array {
+    if (typeof size === 'undefined') {
+      const buff = this.buff.slice(this.#pos)
+      this.#pos += buff.length
+      return buff
+    }
     const buff = this.buff.slice(this.#pos, this.#pos + size)
     if (buff.length !== size) {
       throw new DecodeError(`not a bytes with length of ${size}`)
     }
-    this.#pos += Math.min(buff.length, size)
+    this.#pos += buff.length
     return buff
   }
 

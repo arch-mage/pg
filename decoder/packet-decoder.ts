@@ -66,6 +66,10 @@ export class PacketDecoder extends Decoder {
       // CommandComplete (B)
       return { code, data: this.cstr() }
     }
+    if (code === 'c') {
+      // CopyDone (F & B)
+      return { code }
+    }
     if (code === 'D') {
       // DataRow (B)
       const n = this.int16()
@@ -80,6 +84,10 @@ export class PacketDecoder extends Decoder {
       }
       return { code, data }
     }
+    if (code === 'd') {
+      // CopyData (F & B)
+      return { code, data: this.bytes() }
+    }
     if (code === 'E') {
       // ErrorResponse (B)
       const data: Record<string, string> = {}
@@ -92,6 +100,23 @@ export class PacketDecoder extends Decoder {
         data[String.fromCharCode(key)] = val
       }
       return { code, data }
+    }
+    if (code === 'H') {
+      // CopyOutResponse (B)
+      const format = this.int8()
+      if (format !== 0 && format !== 1) {
+        throw new UnrecognizedFormatCode(format)
+      }
+      const n = this.int16()
+      const formats: Array<0 | 1> = []
+      for (let i = 0; i < n; ++i) {
+        const format = this.int16()
+        if (format !== 0 && format !== 1) {
+          throw new UnrecognizedFormatCode(format)
+        }
+        formats.push(format)
+      }
+      return { code, data: { format, formats } }
     }
     if (code === 'K') {
       // BackendKeyData (B)
@@ -203,12 +228,9 @@ export class PacketDecoder extends Decoder {
 
     // CopyBothResponse (B)
     // CopyInResponse (B)
-    // CopyOutResponse (B)
     // EmptyQueryResponse (B)
     // FunctionCallResponse (B)
     // NegotiateProtocolVersion (B)
-    // CopyData (F & B)
-    // CopyDone (F & B)
     throw new UnrecognizedBackendPacket(code)
   }
 
@@ -248,14 +270,31 @@ export interface CommandComplete {
   data: string
 }
 
+export interface CopyDone {
+  code: 'c'
+}
+
 export interface DataRow {
   code: 'D'
   data: Array<Uint8Array | null>
 }
 
+export interface CopyData {
+  code: 'd'
+  data: Uint8Array
+}
+
 export interface ErrorResponse {
   code: 'E'
   data: Record<string, string>
+}
+
+export interface CopyOutResponse {
+  code: 'H'
+  data: {
+    format: 0 | 1
+    formats: Array<0 | 1>
+  }
 }
 
 export interface BackendKeyData {
@@ -315,8 +354,11 @@ export type BackendPacket =
   | CloseComplete
   | NotificationResponse
   | CommandComplete
+  | CopyDone
   | DataRow
+  | CopyData
   | ErrorResponse
+  | CopyOutResponse
   | BackendKeyData
   | NoticeResponse
   | NoData
