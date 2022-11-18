@@ -8,34 +8,12 @@ import {
   spy,
 } from '../testing.ts'
 import { BackendPacket } from '../decoder/packet-decoder.ts'
-import { Stream } from './stream.ts'
 import { FrontendPacket, PacketEncoder } from '../encoder/packet-encoder.ts'
-import { noop } from '../utils.ts'
-import { Command } from './command.ts'
+import { Command, Stream } from './command.ts'
 import { PostgresError, UnexpectedBackendPacket } from '../errors.ts'
 
-type Release = (state: null | 'I' | 'E' | 'T') => void
-
-function createStream(packs: BackendPacket[]): Stream
-function createStream(packs: BackendPacket[], buff: number[]): Stream
-function createStream(packs: BackendPacket[], release: Release): Stream
-function createStream(
-  packs: BackendPacket[],
-  buff: number[],
-  release: Release
-): Stream
-function createStream(
-  packs: BackendPacket[],
-  wbuff?: number[] | Release,
-  done?: Release
-): Stream {
+function createStream(packs: BackendPacket[], wbuff?: number[]): Stream {
   const buff = Array.isArray(wbuff) ? wbuff : []
-  const release =
-    typeof wbuff === 'function'
-      ? wbuff
-      : typeof done === 'function'
-      ? done
-      : noop
   const enc = new PacketEncoder()
   const readable = packets(packs)
   const writable = new WritableStream<FrontendPacket[]>({
@@ -49,14 +27,36 @@ function createStream(
       }
     },
   })
-  return new Stream(writable.getWriter(), readable.getReader(), release)
+
+  return toStream(writable, readable)
+}
+
+function toStream(
+  writable: WritableStream<FrontendPacket[]>,
+  readable: ReadableStream<BackendPacket>
+): Stream {
+  const writer = writable.getWriter()
+  const reader = readable.getReader()
+
+  function send(packets: FrontendPacket[]): Promise<void> {
+    return writer.write(packets)
+  }
+
+  async function recv(): Promise<BackendPacket | null> {
+    const result = await reader.read()
+    if (result.done) {
+      return null
+    }
+    return result.value
+  }
+  return { send, recv }
 }
 
 Deno.test('init error', async () => {
   const release = spy()
   const packets: BackendPacket[] = [{ code: '1' }, { code: '2' }, { code: '3' }]
-  const stream = createStream(packets, release)
-  const command = Command.create('', [], Promise.resolve(stream))
+  const stream = createStream(packets)
+  const command = Command.create('', [], Promise.resolve(stream), release)
   await assertRejects(
     () => command,
     UnexpectedBackendPacket,
@@ -64,7 +64,7 @@ Deno.test('init error', async () => {
   )
   assertEquals(packets, [])
   assertSpyCalls(release, 1)
-  assertSpyCallArg(release, 0, 0, null)
+  assertSpyCallArg(release, 0, 1, null)
 })
 
 Deno.test('init send error', async () => {
@@ -74,12 +74,8 @@ Deno.test('init send error', async () => {
     },
   })
   const release = spy()
-  const stream = new Stream(
-    writable.getWriter(),
-    packets([]).getReader(),
-    release
-  )
-  const command = Command.create('', [], Promise.resolve(stream))
+  const stream = toStream(writable, packets([]))
+  const command = Command.create('', [], Promise.resolve(stream), release)
   await assertRejects(() => command, Error, 'failed')
 })
 
@@ -93,8 +89,8 @@ Deno.test('await error (before command complete)', async () => {
     { code: '1' },
     { code: 'Z', data: 'I' },
   ]
-  const stream = createStream(packets, release)
-  const command = Command.create('', [], Promise.resolve(stream))
+  const stream = createStream(packets)
+  const command = Command.create('', [], Promise.resolve(stream), release)
   await assertRejects(
     () => command,
     UnexpectedBackendPacket,
@@ -102,7 +98,7 @@ Deno.test('await error (before command complete)', async () => {
   )
   assertEquals(packets, [])
   assertSpyCalls(release, 1)
-  assertSpyCallArg(release, 0, 0, 'I')
+  assertSpyCallArg(release, 0, 1, 'I')
 })
 
 Deno.test('await error (after command complete)', async () => {
@@ -116,8 +112,8 @@ Deno.test('await error (after command complete)', async () => {
     { code: '1' },
     { code: 'Z', data: 'I' },
   ]
-  const stream = createStream(packets, release)
-  const command = Command.create('', [], Promise.resolve(stream))
+  const stream = createStream(packets)
+  const command = Command.create('', [], Promise.resolve(stream), release)
   await assertRejects(
     () => command,
     UnexpectedBackendPacket,
@@ -125,7 +121,7 @@ Deno.test('await error (after command complete)', async () => {
   )
   assertEquals(packets, [])
   assertSpyCalls(release, 1)
-  assertSpyCallArg(release, 0, 0, 'I')
+  assertSpyCallArg(release, 0, 1, 'I')
 })
 
 Deno.test('await error (after close complete)', async () => {
@@ -140,12 +136,12 @@ Deno.test('await error (after close complete)', async () => {
     { code: 'E', data: { M: 'error' } },
     { code: 'Z', data: 'E' },
   ]
-  const stream = createStream(packets, release)
-  const command = Command.create('', [], Promise.resolve(stream))
+  const stream = createStream(packets)
+  const command = Command.create('', [], Promise.resolve(stream), release)
   await assertRejects(() => command, PostgresError, 'error')
   assertEquals(packets, [])
   assertSpyCalls(release, 1)
-  assertSpyCallArg(release, 0, 0, 'E')
+  assertSpyCallArg(release, 0, 1, 'E')
 })
 
 Deno.test('await data', async () => {
@@ -160,8 +156,8 @@ Deno.test('await data', async () => {
     { code: '3' },
     { code: 'Z', data: 'I' },
   ]
-  const stream = createStream(packets, release)
-  const command = Command.create('', [], Promise.resolve(stream))
+  const stream = createStream(packets)
+  const command = Command.create('', [], Promise.resolve(stream), release)
   assertEquals(await command, [
     [[], []],
     [[], []],
@@ -169,7 +165,7 @@ Deno.test('await data', async () => {
   assertEquals(await command, null)
   assertEquals(packets, [])
   assertSpyCalls(release, 1)
-  assertSpyCallArg(release, 0, 0, 'I')
+  assertSpyCallArg(release, 0, 1, 'I')
 })
 
 Deno.test('await no data', async () => {
@@ -182,13 +178,13 @@ Deno.test('await no data', async () => {
     { code: '3' },
     { code: 'Z', data: 'I' },
   ]
-  const stream = createStream(packets, release)
-  const command = Command.create('', [], Promise.resolve(stream))
+  const stream = createStream(packets)
+  const command = Command.create('', [], Promise.resolve(stream), release)
   assertEquals(await command, null)
   assertEquals(await command, null)
   assertEquals(packets, [])
   assertSpyCalls(release, 1)
-  assertSpyCallArg(release, 0, 0, 'I')
+  assertSpyCallArg(release, 0, 1, 'I')
 })
 
 Deno.test('iter error (before command complete)', async () => {
@@ -201,8 +197,8 @@ Deno.test('iter error (before command complete)', async () => {
     { code: '1' },
     { code: 'Z', data: 'I' },
   ]
-  const stream = createStream(packets, release)
-  const command = Command.create('', [], Promise.resolve(stream))
+  const stream = createStream(packets)
+  const command = Command.create('', [], Promise.resolve(stream), release)
   assertEquals(await command.next(), { done: false, value: [[], []] })
   await assertRejects(
     () => command.next(),
@@ -211,7 +207,7 @@ Deno.test('iter error (before command complete)', async () => {
   )
   assertEquals(packets, [])
   assertSpyCalls(release, 1)
-  assertSpyCallArg(release, 0, 0, 'I')
+  assertSpyCallArg(release, 0, 1, 'I')
   assertEquals(await command.next(), { done: true, value: null })
 })
 
@@ -226,8 +222,8 @@ Deno.test('iter error (after command complete)', async () => {
     { code: '1' },
     { code: 'Z', data: 'I' },
   ]
-  const stream = createStream(packets, release)
-  const command = Command.create('', [], Promise.resolve(stream))
+  const stream = createStream(packets)
+  const command = Command.create('', [], Promise.resolve(stream), release)
   assertEquals(await command.next(), { done: false, value: [[], []] })
   await assertRejects(
     () => command.next(),
@@ -236,7 +232,7 @@ Deno.test('iter error (after command complete)', async () => {
   )
   assertEquals(packets, [])
   assertSpyCalls(release, 1)
-  assertSpyCallArg(release, 0, 0, 'I')
+  assertSpyCallArg(release, 0, 1, 'I')
   assertEquals(await command.next(), { done: true, value: null })
 })
 
@@ -252,13 +248,13 @@ Deno.test('iter error (after close complete)', async () => {
     { code: 'E', data: { M: 'error' } },
     { code: 'Z', data: 'E' },
   ]
-  const stream = createStream(packets, release)
-  const command = Command.create('', [], Promise.resolve(stream))
+  const stream = createStream(packets)
+  const command = Command.create('', [], Promise.resolve(stream), release)
   assertEquals(await command.next(), { done: false, value: [[], []] })
   await assertRejects(() => command.next(), PostgresError, 'error')
   assertEquals(packets, [])
   assertSpyCalls(release, 1)
-  assertSpyCallArg(release, 0, 0, 'E')
+  assertSpyCallArg(release, 0, 1, 'E')
   assertEquals(await command.next(), { done: true, value: null })
 })
 
@@ -274,15 +270,15 @@ Deno.test('iter data', async () => {
     { code: '3' },
     { code: 'Z', data: 'I' },
   ]
-  const stream = createStream(packets, release)
-  const command = Command.create('', [], Promise.resolve(stream))
+  const stream = createStream(packets)
+  const command = Command.create('', [], Promise.resolve(stream), release)
   assertEquals(await command.next(), { done: false, value: [[], []] })
   assertEquals(await command.next(), { done: false, value: [[], []] })
   assertEquals(await command.next(), { done: true, value: null })
   assertEquals(await command.next(), { done: true, value: null })
   assertEquals(packets, [])
   assertSpyCalls(release, 1)
-  assertSpyCallArg(release, 0, 0, 'I')
+  assertSpyCallArg(release, 0, 1, 'I')
 })
 
 Deno.test('await no data', async () => {
@@ -295,13 +291,13 @@ Deno.test('await no data', async () => {
     { code: '3' },
     { code: 'Z', data: 'I' },
   ]
-  const stream = createStream(packets, release)
-  const command = Command.create('', [], Promise.resolve(stream))
+  const stream = createStream(packets)
+  const command = Command.create('', [], Promise.resolve(stream), release)
   assertEquals(await command.next(), { done: true, value: null })
   assertEquals(await command.next(), { done: true, value: null })
   assertEquals(packets, [])
   assertSpyCalls(release, 1)
-  assertSpyCallArg(release, 0, 0, 'I')
+  assertSpyCallArg(release, 0, 1, 'I')
 })
 
 Deno.test('promise api catch', async () => {
@@ -315,8 +311,8 @@ Deno.test('promise api catch', async () => {
     { code: '1' },
     { code: 'Z', data: 'I' },
   ]
-  const stream = createStream(packets, release)
-  const command = Command.create('', [], Promise.resolve(stream))
+  const stream = createStream(packets)
+  const command = Command.create('', [], Promise.resolve(stream), release)
   assertEquals(
     await command.catch(catcher),
     'unexpected backend packet: 1. expected: C, D'
@@ -324,7 +320,7 @@ Deno.test('promise api catch', async () => {
   assertEquals(packets, [])
   assertSpyCalls(catcher, 1)
   assertSpyCalls(release, 1)
-  assertSpyCallArg(release, 0, 0, 'I')
+  assertSpyCallArg(release, 0, 1, 'I')
 })
 
 Deno.test('promise api finally', async () => {
@@ -338,13 +334,13 @@ Deno.test('promise api finally', async () => {
     { code: '1' },
     { code: 'Z', data: 'I' },
   ]
-  const stream = createStream(packets, release)
-  const command = Command.create('', [], Promise.resolve(stream))
+  const stream = createStream(packets)
+  const command = Command.create('', [], Promise.resolve(stream), release)
   await assertRejects(() => command.finally(final))
   assertEquals(packets, [])
   assertSpyCalls(final, 1)
   assertSpyCalls(release, 1)
-  assertSpyCallArg(release, 0, 0, 'I')
+  assertSpyCallArg(release, 0, 1, 'I')
 })
 
 Deno.test('iterator api return (early)', async () => {
@@ -360,14 +356,14 @@ Deno.test('iterator api return (early)', async () => {
     { code: '3' },
     { code: 'Z', data: 'I' },
   ]
-  const stream = createStream(packets, release)
-  const command = Command.create('', [], Promise.resolve(stream))
+  const stream = createStream(packets)
+  const command = Command.create('', [], Promise.resolve(stream), release)
   for await (const _ of command) {
     break
   }
   assertEquals(packets, [])
   assertSpyCalls(release, 1)
-  assertSpyCallArg(release, 0, 0, 'I')
+  assertSpyCallArg(release, 0, 1, 'I')
 })
 
 Deno.test('iterator api return (after release)', async () => {
@@ -382,8 +378,8 @@ Deno.test('iterator api return (after release)', async () => {
     { code: '3' },
     { code: 'Z', data: 'I' },
   ]
-  const stream = createStream(packets, release)
-  const command = Command.create('', [], Promise.resolve(stream))
+  const stream = createStream(packets)
+  const command = Command.create('', [], Promise.resolve(stream), release)
   await command.next()
   await command.next()
   for await (const _ of command) {
@@ -391,7 +387,7 @@ Deno.test('iterator api return (after release)', async () => {
   }
   assertEquals(packets, [])
   assertSpyCalls(release, 1)
-  assertSpyCallArg(release, 0, 0, 'I')
+  assertSpyCallArg(release, 0, 1, 'I')
 })
 
 Deno.test('mapped output', async () => {
@@ -406,11 +402,13 @@ Deno.test('mapped output', async () => {
     { code: '3' },
     { code: 'Z', data: 'I' },
   ]
-  const stream = createStream(packets, release)
-  const command = Command.create('', [], Promise.resolve(stream)).map(() => 2)
+  const stream = createStream(packets)
+  const command = Command.create('', [], Promise.resolve(stream), release).map(
+    () => 2
+  )
   assertEquals(await command, [2, 2])
   assertEquals(await command, null)
   assertEquals(packets, [])
   assertSpyCalls(release, 1)
-  assertSpyCallArg(release, 0, 0, 'I')
+  assertSpyCallArg(release, 0, 1, 'I')
 })

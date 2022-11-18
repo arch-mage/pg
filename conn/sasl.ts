@@ -14,7 +14,10 @@ export async function sasl(
 ) {
   await writer.ready
   await writer.write([{ code: 'p', data: encodeInit(nonce) }])
-  const serverFirstMessage = extractAuth(11, extract('R', await reader.read()))
+  const serverFirstMessage = extractAuth(
+    11,
+    extract('R', await reader.read().then((res) => res.value))
+  )
   const attrs = new Map(
     serverFirstMessage
       .split(',')
@@ -75,13 +78,16 @@ export async function sasl(
   const clientFinalMessage = clientFinalMessageWithoutProof + ',p=' + clientProof
   await writer.write([{ code: 'p', data: enc.encode(clientFinalMessage) }])
 
-  const serverFinalMessage = extractAuth(12, extract('R', await reader.read()))
+  const serverFinalMessage = extractAuth(
+    12,
+    extract('R', await reader.read().then((res) => res.value))
+  )
 
   if (serverFinalMessage !== 'v=' + serverSignature) {
     throw new SASLError('mismatch server signature')
   }
 
-  extractAuth(0, extract('R', await reader.read()))
+  extractAuth(0, extract('R', await reader.read().then((res) => res.value)))
 }
 
 function encodeInit(nonce: string): Uint8Array {

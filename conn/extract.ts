@@ -15,85 +15,66 @@ import type {
 import { NoDataReceived, UnexpectedBackendPacket } from '../errors.ts'
 import { hasProp } from '../utils.ts'
 
-export function extract(
-  result?: ReadableStreamReadResult<BackendPacket> | null
-): BackendPacket
-export function extract(
-  code: '1',
-  result?: ReadableStreamReadResult<BackendPacket> | null
-): void
-export function extract(
-  code: '2',
-  result?: ReadableStreamReadResult<BackendPacket> | null
-): void
-export function extract(
-  code: '3',
-  result?: ReadableStreamReadResult<BackendPacket> | null
-): void
+export function extract(packet?: BackendPacket | null): BackendPacket
+export function extract(code: '1', packet?: BackendPacket | null): void
+export function extract(code: '2', packet?: BackendPacket | null): void
+export function extract(code: '3', packet?: BackendPacket | null): void
 export function extract(
   code: 'A',
-  result?: ReadableStreamReadResult<BackendPacket> | null
+  packet?: BackendPacket | null
 ): NotificationResponse['data']
 export function extract(
   code: 'C',
-  result?: ReadableStreamReadResult<BackendPacket> | null
+  packet?: BackendPacket | null
 ): CommandComplete['data']
 export function extract(
   code: 'D',
-  result?: ReadableStreamReadResult<BackendPacket> | null
+  packet?: BackendPacket | null
 ): DataRow['data']
 export function extract(
   code: 'E',
-  result?: ReadableStreamReadResult<BackendPacket> | null
+  packet?: BackendPacket | null
 ): ErrorResponse['data']
 export function extract(
   code: 'K',
-  result?: ReadableStreamReadResult<BackendPacket> | null
+  packet?: BackendPacket | null
 ): BackendKeyData['data']
 export function extract(
   code: 'N',
-  result?: ReadableStreamReadResult<BackendPacket> | null
+  packet?: BackendPacket | null
 ): NoticeResponse['data']
-export function extract(
-  code: 'n',
-  result?: ReadableStreamReadResult<BackendPacket> | null
-): void
+export function extract(code: 'n', packet?: BackendPacket | null): void
 export function extract(
   code: 'R',
-  result?: ReadableStreamReadResult<BackendPacket> | null
+  packet?: BackendPacket | null
 ): Authentication['data']
 export function extract(
   code: 'S',
-  result?: ReadableStreamReadResult<BackendPacket> | null
+  packet?: BackendPacket | null
 ): ParameterStatus['data']
-export function extract(
-  code: 's',
-  result?: ReadableStreamReadResult<BackendPacket> | null
-): void
+export function extract(code: 's', packet?: BackendPacket | null): void
 export function extract(
   code: 'T',
-  result?: ReadableStreamReadResult<BackendPacket> | null
+  packet?: BackendPacket | null
 ): RowDescription['data']
 export function extract(
   code: 't',
-  result?: ReadableStreamReadResult<BackendPacket> | null
+  packet?: BackendPacket | null
 ): ParameterDescription['data']
 export function extract(
   code: 'Z',
-  result?: ReadableStreamReadResult<BackendPacket> | null
+  packet?: BackendPacket | null
 ): ReadyForQuery['data']
 export function extract(
-  code?: string | ReadableStreamReadResult<BackendPacket> | null,
-  result?: ReadableStreamReadResult<BackendPacket> | null
+  code?: string | BackendPacket | null,
+  packet?: BackendPacket | null
 ): unknown {
   if (typeof code !== 'string') {
-    const packet = code?.value
-    if (!packet) {
+    if (!code) {
       throw new NoDataReceived()
     }
-    return packet
+    return code
   }
-  const packet = result?.value
   if (!packet) {
     throw new NoDataReceived()
   }

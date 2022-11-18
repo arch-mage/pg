@@ -9,8 +9,7 @@ import { FrontendPacket, PacketEncoder } from '../encoder/packet-encoder.ts'
 import { extract } from './extract.ts'
 import { clearNil, maybeBackendError } from '../utils.ts'
 import { sasl } from './sasl.ts'
-import { Stream } from './stream.ts'
-import { Command } from './command.ts'
+import { Command, Stream } from './command.ts'
 
 type RawValue = Uint8Array | null
 
@@ -68,7 +67,7 @@ async function startup(
         },
       },
     ])
-    const auth = extract('R', await reader.read())
+    const auth = extract('R', await reader.read().then((res) => res.value))
     if (auth.code === 0) {
       // OK
     } else if (auth.code === 10) {
@@ -79,7 +78,8 @@ async function startup(
     let process: number
     let secret: number
     for (;;) {
-      const packet = extract(await reader.read())
+      const result = await reader.read()
+      const packet = extract(result.value)
       if (packet.code === 'S') {
         params.set(packet.data.name, packet.data.data)
         continue
@@ -91,7 +91,7 @@ async function startup(
         break
       }
     }
-    const state = extract('Z', await reader.read())
+    const state = extract('Z', await reader.read().then((res) => res.value))
     return { params, process, secret, state }
   } catch (error) {
     throw maybeBackendError(error)
@@ -139,7 +139,6 @@ function createWritable(
         chunk.forEach(enc.encode.bind(enc))
         await writer.write(enc.buff)
       } catch (error) {
-        writer.releaseLock()
         controller.error(error)
       }
     },
@@ -147,7 +146,6 @@ function createWritable(
       writer.abort(reason)
     },
     close() {
-      writer.releaseLock()
       writable.close()
     },
   })
@@ -165,8 +163,8 @@ export class Conn extends EventTarget {
   readonly #secret: number
   readonly #process: number
   readonly #queue: Array<(stream: Stream) => void>
-  readonly #writable: WritableStream<FrontendPacket[]>
-  readonly #readable: ReadableStream<BackendPacket>
+  readonly #writer: WritableStreamDefaultWriter<FrontendPacket[]>
+  readonly #reader: ReadableStreamDefaultReader<BackendPacket>
 
   #locked: boolean
   #state: 'I' | 'T' | 'E'
@@ -207,32 +205,41 @@ export class Conn extends EventTarget {
     this.#queue = []
     this.#state = state
     this.#locked = false
-    this.#writable = writable
-    this.#readable = readable.pipeThrough(
-      new TransformStream<BackendPacket, BackendPacket>({
-        transform: this.#filter.bind(this),
-      })
-    )
+    this.#writer = writable.getWriter()
+    this.#reader = readable
+      .pipeThrough(
+        new TransformStream<BackendPacket, BackendPacket>({
+          transform: this.#filter.bind(this),
+        })
+      )
+      .getReader()
     this.#params = params ?? new Map()
     this.#process = process
     this.#secret = secret
   }
 
-  #acquire(): Promise<Stream> {
+  send(packets: FrontendPacket[]): Promise<void> {
+    return this.#writer.write(packets)
+  }
+
+  async recv(): Promise<BackendPacket | null> {
+    const result = await this.#reader.read()
+    if (result.done) {
+      return null
+    }
+    return result.value
+  }
+
+  acquire(): Promise<Stream> {
     if (this.#locked) {
       return new Promise((resolve) => this.#queue.push(resolve))
     } else {
       this.#locked = true
-      const stream = new Stream(
-        this.#writable.getWriter(),
-        this.#readable.getReader(),
-        this.#release.bind(this)
-      )
-      return Promise.resolve(stream)
+      return Promise.resolve(this)
     }
   }
 
-  #release(state: null | 'I' | 'E' | 'T') {
+  release(_: Stream, state: null | 'I' | 'E' | 'T') {
     if (state) {
       this.#state = state
     }
@@ -241,12 +248,7 @@ export class Conn extends EventTarget {
       this.#locked = false
       return
     }
-    const stream = new Stream(
-      this.#writable.getWriter(),
-      this.#readable.getReader(),
-      this.#release.bind(this)
-    )
-    resolve(stream)
+    resolve(this)
   }
 
   #filter(
@@ -294,9 +296,8 @@ export class Conn extends EventTarget {
   }
 
   async terminate() {
-    const stream = await this.#acquire()
+    const stream = await this.acquire()
     await stream.send([{ code: 'X' }])
-    stream.release(null)
   }
 
   close() {
@@ -304,7 +305,12 @@ export class Conn extends EventTarget {
   }
 
   query(query: string, params: RawValue[] = []) {
-    return Command.create(query, params, this.#acquire())
+    return Command.create(
+      query,
+      params,
+      this.acquire(),
+      this.release.bind(this)
+    )
   }
 
   addEventListener(

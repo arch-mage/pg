@@ -4,12 +4,12 @@ export {
   assertEquals,
   assertThrows,
   assertRejects,
-} from 'https://deno.land/std@0.164.0/testing/asserts.ts'
+} from 'https://deno.land/std@0.165.0/testing/asserts.ts'
 export {
   spy,
   assertSpyCalls,
   assertSpyCallArg,
-} from 'https://deno.land/std@0.164.0/testing/mock.ts'
+} from 'https://deno.land/std@0.165.0/testing/mock.ts'
 
 export function uint8(...bytes: Array<string | number | number[]>) {
   return new Uint8Array(

@@ -1,9 +1,15 @@
-import { RowDescription } from '../decoder/packet-decoder.ts'
+import { BackendPacket, RowDescription } from '../decoder/packet-decoder.ts'
 import { FrontendPacket } from '../encoder/packet-encoder.ts'
 import { UnexpectedBackendPacket } from '../errors.ts'
 import { compose, maybeBackendError, noop } from '../utils.ts'
 import { extract } from './extract.ts'
-import { Stream } from './stream.ts'
+
+export interface Stream {
+  send(packets: FrontendPacket[]): Promise<void>
+  recv(): Promise<BackendPacket | null>
+}
+
+type Release = (stream: Stream, state: null | 'I' | 'E' | 'T') => void
 
 type RawValue = Uint8Array | null
 
@@ -34,18 +40,21 @@ interface StateClosed {
 type State = StateIdle | StateInit | StateRunning | StateClosed
 
 export class Command<T> {
+  readonly #mapper: (value: [RawValue[], Field[]]) => T
+  readonly #stream: Promise<Stream>
+  readonly #release: Release
   #state: State
-  #mapper: (value: [RawValue[], Field[]]) => T
-  #stream: Promise<Stream>
 
   static create(
     query: string,
     params: RawValue[],
-    stream: Promise<Stream>
+    stream: Promise<Stream>,
+    release: Release
   ): Command<[RawValue[], Field[]]> {
     return new Command(
       stream,
       { code: 'idle', query, params },
+      release,
       noop<[RawValue[], Field[]]>
     )
   }
@@ -53,11 +62,13 @@ export class Command<T> {
   constructor(
     stream: Promise<Stream>,
     state: State,
+    release: Release,
     mapper: (value: [RawValue[], Field[]]) => T
   ) {
     this.#state = state
     this.#mapper = mapper
     this.#stream = stream
+    this.#release = release
   }
 
   then<R1 = T[] | null, R2 = never>(
@@ -94,23 +105,31 @@ export class Command<T> {
   }
 
   map<U>(mapper: (value: T) => U): Command<U> {
-    return new Command(this.#stream, this.#state, compose(mapper, this.#mapper))
+    return new Command(
+      this.#stream,
+      this.#state,
+      this.#release,
+      compose(mapper, this.#mapper)
+    )
   }
 
   #close(state: null | 'I' | 'E' | 'T' = null) {
     if (this.#state.code === 'init' || this.#state.code === 'running') {
-      this.#state.stream.release(state)
+      this.#release(this.#state.stream, state)
     }
     this.#state = { code: 'closed', state }
   }
 
   async #exhaust(stream: Stream) {
-    for await (const packet of stream) {
-      if (packet.code === 'Z') {
-        return packet.data
+    for (;;) {
+      const result = await stream.recv()
+      if (!result) {
+        return null
+      }
+      if (result.code === 'Z') {
+        return result.data
       }
     }
-    return null
   }
 
   async #send(stream: Stream, query: string, params: RawValue[]) {
@@ -138,14 +157,14 @@ export class Command<T> {
     this.#state = { code: 'init', stream }
     await this.#send(stream, query, params)
     try {
-      extract('1', await stream.next())
-      extract('2', await stream.next())
-      const packet = extract(await stream.next())
+      extract('1', await stream.recv())
+      extract('2', await stream.recv())
+      const packet = extract(await stream.recv())
 
       if (packet.code === 'n') {
-        extract('C', await stream.next())
-        extract('3', await stream.next())
-        return this.#close(extract('Z', await stream.next()))
+        extract('C', await stream.recv())
+        extract('3', await stream.recv())
+        return this.#close(extract('Z', await stream.recv()))
       }
 
       if (packet.code === 'T') {
@@ -168,9 +187,10 @@ export class Command<T> {
     const { stream, fields } = this.#state
     try {
       const rows: T[] = []
-      for await (const packet of stream) {
+      for (;;) {
+        const packet = extract(await stream.recv())
         if (packet.code === 'C') {
-          extract('3', await stream.next())
+          extract('3', await stream.recv())
           break
         }
         if (packet.code === 'D') {
@@ -180,7 +200,7 @@ export class Command<T> {
 
         throw new UnexpectedBackendPacket(packet, ['C', 'D'])
       }
-      this.#close(extract('Z', await stream.next()))
+      this.#close(extract('Z', await stream.recv()))
       return rows
     } catch (error) {
       this.#close(await this.#exhaust(stream))
@@ -195,13 +215,13 @@ export class Command<T> {
     }
     const { stream, fields } = this.#state
     try {
-      const packet = await stream.recv()
+      const packet = extract(await stream.recv())
       if (packet.code === 'D') {
         return this.#mapper([packet.data, fields])
       }
       if (packet.code === 'C') {
-        extract('3', await stream.next())
-        this.#close(extract('Z', await stream.next()))
+        extract('3', await stream.recv())
+        this.#close(extract('Z', await stream.recv()))
         return null
       }
       throw new UnexpectedBackendPacket(packet, ['C', 'D'])
