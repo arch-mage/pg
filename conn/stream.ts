@@ -3,9 +3,9 @@ import { FrontendPacket } from '../encoder/packet-encoder.ts'
 import { extract } from './extract.ts'
 
 export class Stream {
-  #writer: WritableStreamDefaultWriter<FrontendPacket[]>
-  #reader: ReadableStreamDefaultReader<BackendPacket>
-  #release: (state: null | 'I' | 'E' | 'T') => void
+  readonly #writer: WritableStreamDefaultWriter<FrontendPacket[]>
+  readonly #reader: ReadableStreamDefaultReader<BackendPacket>
+  readonly #release: (state: null | 'I' | 'E' | 'T') => void
 
   constructor(
     writer: WritableStreamDefaultWriter<FrontendPacket[]>,

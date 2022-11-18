@@ -1,8 +1,4 @@
-import {
-  BackendPacket,
-  PacketDecoder,
-  RowDescription,
-} from '../decoder/packet-decoder.ts'
+import { BackendPacket, PacketDecoder } from '../decoder/packet-decoder.ts'
 import { FrontendPacket, PacketEncoder } from '../encoder/packet-encoder.ts'
 import { extract } from './extract.ts'
 import { clearNil, maybeBackendError } from '../utils.ts'
@@ -11,8 +7,6 @@ import { Stream } from './stream.ts'
 import { Command } from './command.ts'
 
 type RawValue = Uint8Array | null
-
-type Field = RowDescription['data'][number]
 
 export interface ConnectOptions {
   ssl?: boolean
