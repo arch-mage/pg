@@ -63,7 +63,7 @@ Deno.test('parameterStatus', () => {
     new PacketDecoder(
       uint8('S', [0, 0, 0, 14], 'app', [0], 'name', [0, 0])
     ).decode(),
-    { code: 'S' as const, data: ['app', 'name'] }
+    { code: 'S' as const, data: { name: 'app', data: 'name' } }
   )
 })
 
@@ -80,7 +80,7 @@ Deno.test('backendKeyData', () => {
     new PacketDecoder(
       uint8('K', [0, 0, 0, 12], [0, 0, 0, 1], [0, 0, 0, 2])
     ).decode(),
-    { code: 'K' as const, data: [1, 2] }
+    { code: 'K' as const, data: { process: 1, secret: 2 } }
   )
 })
 

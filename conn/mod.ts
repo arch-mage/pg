@@ -1,4 +1,10 @@
-import { BackendPacket, PacketDecoder } from '../decoder/packet-decoder.ts'
+import {
+  BackendPacket,
+  NoticeResponse,
+  NotificationResponse,
+  PacketDecoder,
+  ParameterStatus,
+} from '../decoder/packet-decoder.ts'
 import { FrontendPacket, PacketEncoder } from '../encoder/packet-encoder.ts'
 import { extract } from './extract.ts'
 import { clearNil, maybeBackendError } from '../utils.ts'
@@ -15,7 +21,7 @@ export interface ConnectOptions {
 }
 
 export interface StartupOptions {
-  user?: string
+  user: string
   password?: string
   database?: string
 }
@@ -45,30 +51,83 @@ async function connect(options: ConnectOptions = {}): Promise<Deno.Conn> {
   }
 }
 
+async function startup(
+  writer: WritableStreamDefaultWriter<FrontendPacket[]>,
+  reader: ReadableStreamDefaultReader<BackendPacket>,
+  { user, database, password }: StartupOptions
+) {
+  try {
+    password ??= ''
+    await writer.ready
+    await writer.write([
+      {
+        code: null,
+        data: {
+          code: 196608,
+          data: { user, params: clearNil({ database }) },
+        },
+      },
+    ])
+    const auth = extract('R', await reader.read())
+    if (auth.code === 0) {
+      // OK
+    } else if (auth.code === 10) {
+      await sasl(writer, reader, password, 'nonce')
+    }
+
+    const params = new Map<string, string>()
+    let process: number
+    let secret: number
+    for (;;) {
+      const packet = extract(await reader.read())
+      if (packet.code === 'S') {
+        params.set(packet.data.name, packet.data.data)
+        continue
+      }
+
+      if (packet.code === 'K') {
+        process = packet.data.process
+        secret = packet.data.secret
+        break
+      }
+    }
+    const state = extract('Z', await reader.read())
+    return { params, process, secret, state }
+  } catch (error) {
+    throw maybeBackendError(error)
+  }
+}
+
 function createReadable(
-  dec: PacketDecoder,
   readable: ReadableStream<Uint8Array>
 ): ReadableStream<BackendPacket> {
+  const dec = new PacketDecoder()
+  const reader = readable.getReader()
   return new ReadableStream({
-    async start(controller) {
+    async pull(controller) {
       try {
-        for await (const chunk of readable) {
-          for (const packet of dec.feed(chunk)) {
+        const result = await reader.read()
+        if (result.done) {
+          controller.close()
+        } else {
+          for (const packet of dec.feed(result.value)) {
             controller.enqueue(packet)
           }
         }
       } catch (error) {
         controller.error(error)
-        controller.close()
       }
+    },
+    cancel(reason?: unknown) {
+      reader.cancel(reason)
     },
   })
 }
 
 function createWritable(
-  enc: PacketEncoder,
   writable: WritableStream<Uint8Array>
 ): WritableStream<FrontendPacket[]> {
+  const enc = new PacketEncoder()
   const writer = writable.getWriter()
   return new WritableStream({
     async start() {
@@ -84,6 +143,13 @@ function createWritable(
         controller.error(error)
       }
     },
+    abort(reason?: unknown) {
+      writer.abort(reason)
+    },
+    close() {
+      writer.releaseLock()
+      writable.close()
+    },
   })
 }
 
@@ -93,10 +159,11 @@ export interface Connection {
   close(): void
 }
 
-export class Conn {
-  readonly #enc: PacketEncoder
-  readonly #dec: PacketDecoder
+export class Conn extends EventTarget {
   readonly #conn: Connection
+  readonly #params: Map<string, string>
+  readonly #secret: number
+  readonly #process: number
   readonly #queue: Array<(stream: Stream) => void>
   readonly #writable: WritableStream<FrontendPacket[]>
   readonly #readable: ReadableStream<BackendPacket>
@@ -104,75 +171,51 @@ export class Conn {
   #locked: boolean
   #state: 'I' | 'T' | 'E'
 
-  static async connect({ ssl, host, port, ...options }: Options = {}) {
-    const conn = new Conn(await connect({ ssl, host, port }))
-    await conn.#startup(options)
-    return conn
-  }
-
-  constructor(conn: Connection) {
-    this.#enc = new PacketEncoder()
-    this.#dec = new PacketDecoder()
-    this.#conn = conn
-    this.#queue = []
-    this.#state = 'I'
-    this.#locked = false
-    this.#writable = createWritable(this.#enc, this.#conn.writable)
-    this.#readable = createReadable(this.#dec, this.#conn.readable)
-  }
-
-  get state(): 'I' | 'T' | 'E' {
-    return this.#state
-  }
-
-  async terminate() {
-    const stream = await this.#acquire()
-    await stream.send([{ code: 'X' }])
-    stream.release(null)
-  }
-
-  close() {
-    this.#conn.close()
-  }
-
-  async #startup({ user, database, password }: StartupOptions = {}) {
-    const writer = this.#writable.getWriter()
-    const reader = this.#readable.getReader()
+  static async connect({
+    ssl,
+    host,
+    port,
+    ...options
+  }: Options): Promise<Conn> {
+    const conn = await connect({ ssl, host, port })
+    const writable = createWritable(conn.writable)
+    const readable = createReadable(conn.readable)
+    const writer = writable.getWriter()
+    const reader = readable.getReader()
+    let startupResult: Awaited<ReturnType<typeof startup>>
     try {
-      user ??= Deno.env.get('USER') ?? 'postgres'
-      password ??= ''
-      await writer.ready
-      await writer.write([
-        {
-          code: null,
-          data: {
-            code: 196608,
-            data: { user, params: clearNil({ database }) },
-          },
-        },
-      ])
-      const auth = extract('R', await reader.read())
-      if (auth.code === 0) {
-        // OK
-      } else if (auth.code === 10) {
-        await sasl(writer, reader, password, 'nonce')
-      }
-      for (;;) {
-        const packet = extract(await reader.read())
-        if (packet.code === 'Z') {
-          break
-        }
-      }
-    } catch (error) {
-      throw maybeBackendError(error)
+      startupResult = await startup(writer, reader, options)
     } finally {
       writer.releaseLock()
       reader.releaseLock()
     }
+    const { params, process, secret, state } = startupResult
+    return new Conn(conn, writable, readable, process, secret, state, params)
   }
 
-  query(query: string, params: RawValue[] = []) {
-    return Command.create(query, params, this.#acquire())
+  constructor(
+    conn: Connection,
+    writable: WritableStream<FrontendPacket[]>,
+    readable: ReadableStream<BackendPacket>,
+    process: number = 0,
+    secret: number = 0,
+    state: 'I' | 'T' | 'E' = 'I',
+    params?: Map<string, string>
+  ) {
+    super()
+    this.#conn = conn
+    this.#queue = []
+    this.#state = state
+    this.#locked = false
+    this.#writable = writable
+    this.#readable = readable.pipeThrough(
+      new TransformStream<BackendPacket, BackendPacket>({
+        transform: this.#filter.bind(this),
+      })
+    )
+    this.#params = params ?? new Map()
+    this.#process = process
+    this.#secret = secret
   }
 
   #acquire(): Promise<Stream> {
@@ -205,4 +248,95 @@ export class Conn {
     )
     resolve(stream)
   }
+
+  #filter(
+    packet: BackendPacket,
+    controller: TransformStreamDefaultController<BackendPacket>
+  ) {
+    let event: Event
+    switch (packet.code) {
+      case 'A':
+        event = new CustomEvent<NotificationResponse['data']>('notification', {
+          detail: packet.data,
+        })
+        break
+      case 'N':
+        event = new CustomEvent<NoticeResponse['data']>('notice', {
+          detail: packet.data,
+        })
+        break
+      case 'S':
+        event = new CustomEvent<ParameterStatus['data']>('paramterStatus', {
+          detail: packet.data,
+        })
+        break
+      default:
+        controller.enqueue(packet)
+        return
+    }
+    this.dispatchEvent(event)
+  }
+
+  get state(): 'I' | 'T' | 'E' {
+    return this.#state
+  }
+
+  get process(): number {
+    return this.#process
+  }
+
+  get secret(): number {
+    return this.#secret
+  }
+
+  param(name: string): string | undefined {
+    return this.#params.get(name)
+  }
+
+  async terminate() {
+    const stream = await this.#acquire()
+    await stream.send([{ code: 'X' }])
+    stream.release(null)
+  }
+
+  close() {
+    this.#conn.close()
+  }
+
+  query(query: string, params: RawValue[] = []) {
+    return Command.create(query, params, this.#acquire())
+  }
+
+  addEventListener(
+    type: 'notice',
+    listener: ListenerOrListenerObject<NoticeResponse['data']> | null,
+    options?: boolean | AddEventListenerOptions | undefined
+  ): void
+  addEventListener(
+    type: 'notification',
+    listener: ListenerOrListenerObject<NotificationResponse['data']> | null,
+    options?: boolean | AddEventListenerOptions | undefined
+  ): void
+  addEventListener(
+    type: 'parameterStatus',
+    listener: ListenerOrListenerObject<ParameterStatus['data']> | null,
+    options?: boolean | AddEventListenerOptions | undefined
+  ): void
+  addEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: boolean | AddEventListenerOptions | undefined
+  ): void {
+    super.addEventListener(type, listener, options)
+  }
 }
+
+interface Listener<T> {
+  (evt: CustomEvent<T>): void | Promise<void>
+}
+
+interface ListenerObject<T> {
+  handleEvent(evt: CustomEvent<T>): void | Promise<void>
+}
+
+type ListenerOrListenerObject<T> = Listener<T> | ListenerObject<T>

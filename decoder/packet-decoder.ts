@@ -137,7 +137,10 @@ export class PacketDecoder extends Decoder {
     }
     if (code === 'K') {
       // BackendKeyData (B)
-      return { code, data: [this.int32(), this.int32()] }
+      return {
+        code,
+        data: { process: this.int32(), secret: this.int32() },
+      }
     }
     if (code === 'N') {
       // NoticeResponse (B)
@@ -192,7 +195,7 @@ export class PacketDecoder extends Decoder {
     }
     if (code === 'S') {
       // ParameterStatus (B)
-      return { code, data: [this.cstr(), this.cstr()] }
+      return { code, data: { name: this.cstr(), data: this.cstr() } }
     }
     if (code === 's') {
       return { code }
@@ -323,7 +326,10 @@ export interface CopyOutResponse {
 
 export interface BackendKeyData {
   code: 'K'
-  data: [number, number]
+  data: {
+    process: number
+    secret: number
+  }
 }
 
 export interface NoticeResponse {
@@ -342,7 +348,10 @@ export interface Authentication {
 
 export interface ParameterStatus {
   code: 'S'
-  data: [string, string]
+  data: {
+    name: string
+    data: string
+  }
 }
 
 export interface PortalSuspended {
