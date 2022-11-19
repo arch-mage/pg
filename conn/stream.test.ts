@@ -32,16 +32,6 @@ function createStream(packs: BackendPacket[], wbuff?: number[]): Stream {
   return new Stream(writable.getWriter(), readable.getReader())
 }
 
-function toStream(
-  writable: WritableStream<FrontendPacket>,
-  readable: ReadableStream<BackendPacket>
-): Stream {
-  const writer = writable.getWriter()
-  const reader = readable.getReader()
-
-  return new Stream(writer, reader)
-}
-
 function query(query: string, params: RawValue[] = []): FrontendPacket[] {
   return [parse(query), bind(params), describe(), execute(), close(), sync()]
 
@@ -105,7 +95,7 @@ Deno.test('command init send error', async () => {
     },
   })
   const release = spy()
-  const stream = toStream(writable, packets([]))
+  const stream = new Stream(writable.getWriter(), packets([]).getReader())
   const command = Command.create(
     Promise.resolve(stream),
     query('', []),
@@ -526,4 +516,35 @@ Deno.test('conn query', async () => {
   const q2 = conn.command(query('', []))
   assertEquals(await q1, null)
   assertEquals(await q2.next(), { done: true, value: null })
+})
+
+Deno.test('conn closed', async () => {
+  const conn = createStream([
+    { code: '1' },
+    { code: '2' },
+    { code: 'n' },
+    { code: 'C', data: '' },
+    { code: '3' },
+    { code: 'Z', data: 'T' },
+    { code: '1' },
+    { code: '2' },
+    { code: 'n' },
+    { code: 'C', data: '' },
+    { code: '3' },
+    { code: 'Z', data: 'I' },
+  ])
+
+  conn.close()
+  const q1 = conn.command(query('', []))
+  const q2 = conn.command(query('', []))
+  await assertRejects(
+    () => q1,
+    TypeError,
+    'The writer has already been released.'
+  )
+  await assertRejects(
+    () => q2.next(),
+    TypeError,
+    'The writer has already been released.'
+  )
 })

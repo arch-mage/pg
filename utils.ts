@@ -64,3 +64,12 @@ export function maybeBackendError(error: unknown): unknown {
   }
   return new PostgresError(error.packet.data)
 }
+
+export function remove<T>(array: T[], elem: T) {
+  const idx = array.indexOf(elem)
+  if (idx === -1) {
+    return null
+  }
+  array.splice(idx, 1)
+  return elem
+}

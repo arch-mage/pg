@@ -114,6 +114,7 @@ export class PostgresError extends Error {
 
   constructor(packet: Record<string, string>) {
     super()
+    this.name = this.constructor.name
     this.code = packet.C
     this.message = packet.M
     this.severity = packet.V ?? packet.S
@@ -136,5 +137,31 @@ export class PostgresError extends Error {
 export class NoDataReceived extends Error {
   constructor(cause?: unknown) {
     super('no data received', { cause })
+    this.name = this.constructor.name
+  }
+}
+
+export class PoolError extends Error {
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause })
+    this.name = this.constructor.name
+  }
+}
+
+export class TimeoutError extends PoolError {
+  readonly timeout: number
+  constructor(timeout: number) {
+    super(`timeout of ${timeout}ms is exceeded`)
+    this.timeout = timeout
+  }
+}
+
+export class InvalidPoolState extends PoolError {
+  readonly state: 'S' | 'C'
+
+  constructor(state: 'S' | 'C') {
+    const hint = state === 'S' ? 'shutting down' : 'closed'
+    super(`the pool is ${hint}`)
+    this.state = state
   }
 }

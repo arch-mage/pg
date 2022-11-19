@@ -10,6 +10,7 @@ export {
   assertSpyCalls,
   assertSpyCallArg,
 } from 'https://deno.land/std@0.165.0/testing/mock.ts'
+export { FakeTime } from 'https://deno.land/std@0.165.0/testing/time.ts'
 
 export function uint8(...bytes: Array<string | number | number[]>) {
   return new Uint8Array(

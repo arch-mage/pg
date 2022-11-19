@@ -21,14 +21,6 @@ export class Stream {
     this.#streaming = false
   }
 
-  get writer(): Writer {
-    return this.#writer
-  }
-
-  get reader(): Reader {
-    return this.#reader
-  }
-
   close(): void {
     this.#writer.releaseLock()
     this.#reader.releaseLock()

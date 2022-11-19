@@ -122,25 +122,8 @@ export class Client {
     this.close()
   }
 
-  query(query: string, parameters: Value[] = []) {
-    const params = parameters.map((value) => encode(value, this.#enc))
-    const packets: FrontendPacket[] = [
-      { code: 'P', data: { query, name: '', formats: [] } },
-      {
-        code: 'B',
-        data: {
-          stmt: '',
-          portal: '',
-          params,
-          paramFormats: [0],
-          resultFormats: [0],
-        },
-      },
-      { code: 'D', data: { kind: 'P', name: '' } },
-      { code: 'E', data: { max: 0, name: '' } },
-      { code: 'C', data: { kind: 'P', name: '' } },
-      { code: 'S' },
-    ]
+  query(query: string, params: Value[] = []) {
+    const packets = queryPackets(query, params, this.#enc)
     return Command.create(
       this.acquireStream(),
       packets,
@@ -158,7 +141,32 @@ export class Client {
   }
 }
 
-function record(row: [RawValue[], Field[]]): Record<string, unknown> {
+export function queryPackets(
+  query: string,
+  parameters: Value[],
+  enc: PacketEncoder
+): FrontendPacket[] {
+  const params = parameters.map((value) => encode(value, enc))
+  return [
+    { code: 'P', data: { query, name: '', formats: [] } },
+    {
+      code: 'B',
+      data: {
+        stmt: '',
+        portal: '',
+        params,
+        paramFormats: [0],
+        resultFormats: [0],
+      },
+    },
+    { code: 'D', data: { kind: 'P', name: '' } },
+    { code: 'E', data: { max: 0, name: '' } },
+    { code: 'C', data: { kind: 'P', name: '' } },
+    { code: 'S' },
+  ]
+}
+
+export function record(row: [RawValue[], Field[]]): Record<string, unknown> {
   const record: Record<string, unknown> = {}
   for (let i = 0; i < row[0].length; ++i) {
     const val = row[0][i]
