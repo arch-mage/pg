@@ -33,9 +33,9 @@ export interface StartupOptions {
   database?: string
 }
 
-export interface Options extends ConnectOptions, StartupOptions {}
+export interface ClientOptions extends ConnectOptions, StartupOptions {}
 
-interface Conn extends Deno.Closer {
+export interface Conn extends Deno.Closer {
   readonly readable: ReadableStream<Uint8Array>
   readonly writable: WritableStream<Uint8Array>
 }
@@ -53,7 +53,7 @@ export class Client {
 
   #state: ReadyState
 
-  static async connect(options: Options) {
+  static async connect(options: ClientOptions) {
     return Client.fromConn(await connect(options), options)
   }
 

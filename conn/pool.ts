@@ -1,23 +1,18 @@
 import { Pool as GenericPool } from './generic-pool.ts'
-import {
-  Client,
-  Options as ClientOptions,
-  queryPackets,
-  record,
-} from './client.ts'
+import { Client, ClientOptions, queryPackets, record } from './client.ts'
 import { Value } from '../encoder/text.ts'
 import { Command, Stream } from './stream.ts'
 import { PacketEncoder } from '../encoder/packet-encoder.ts'
 import { ReadyState } from './types.ts'
 
-export interface Options extends ClientOptions {
+export interface PoolOptions extends ClientOptions {
   max?: number
   timeout?: number
 }
 
 export class Pool extends GenericPool<Client> {
   readonly #enc: PacketEncoder
-  constructor({ max, timeout, ...options }: Options) {
+  constructor({ max, timeout, ...options }: PoolOptions) {
     super({
       max: max ?? 10,
       timeout: timeout ?? 60000,
