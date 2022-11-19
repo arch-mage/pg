@@ -1,10 +1,25 @@
 import { sasl } from './sasl.ts'
 import { Command, Stream } from './stream.ts'
 import { extract } from './extract.ts'
-import type { Writable, Readable, ReadyState } from './types.ts'
+import type {
+  Writable,
+  Readable,
+  ReadyState,
+  RawValue,
+  Field,
+} from './types.ts'
 import { clearNil, maybeBackendError } from '../utils.ts'
-import { BackendPacket, PacketDecoder } from '../decoder/packet-decoder.ts'
+import {
+  BackendPacket,
+  NoticeResponse,
+  NotificationResponse,
+  PacketDecoder,
+  ParameterStatus,
+} from '../decoder/packet-decoder.ts'
 import { FrontendPacket, PacketEncoder } from '../encoder/packet-encoder.ts'
+import { encode, Value } from '../encoder/text.ts'
+import { decode } from '../decoder/text.ts'
+import { filter } from './transform.ts'
 
 export interface ConnectOptions {
   ssl?: boolean
@@ -47,15 +62,21 @@ export class Client {
     const dec = new PacketDecoder()
     const writable = createWritable(enc, conn.writable)
     const readable = createReadable(dec, conn.readable)
-    const stream = new Stream(writable.getWriter(), readable.getReader())
-    const result = await startup(stream.writer, stream.reader, options)
+    const writer = writable.getWriter()
+    const reader = readable.getReader()
+    let result
+    try {
+      result = await startup(writer, reader, options)
+    } finally {
+      writer.releaseLock()
+      reader.releaseLock()
+    }
     const { state, params, secret, process } = result
     return new Client(
       enc,
       dec,
       conn,
       state,
-      stream,
       params,
       secret,
       process,
@@ -69,7 +90,6 @@ export class Client {
     dec: PacketDecoder,
     conn: Conn,
     state: ReadyState,
-    stream: Stream,
     params: Map<string, string>,
     secret: number,
     process: number,
@@ -80,12 +100,15 @@ export class Client {
     this.#dec = dec
     this.#conn = conn
     this.#state = state
-    this.#stream = stream
     this.#params = params
     this.#secret = secret
     this.#process = process
     this.#writable = writable
-    this.#readable = readable
+    this.#readable = readable.pipeThrough(filter(isNotAsyncPacket))
+    this.#stream = new Stream(
+      this.#writable.getWriter(),
+      this.#readable.getReader()
+    )
   }
 
   close(): void {
@@ -99,7 +122,8 @@ export class Client {
     this.close()
   }
 
-  query(query: string) {
+  query(query: string, parameters: Value[] = []) {
+    const params = parameters.map((value) => encode(value, this.#enc))
     const packets: FrontendPacket[] = [
       { code: 'P', data: { query, name: '', formats: [] } },
       {
@@ -107,9 +131,9 @@ export class Client {
         data: {
           stmt: '',
           portal: '',
-          params: [],
-          paramFormats: [],
-          resultFormats: [],
+          params,
+          paramFormats: [0],
+          resultFormats: [0],
         },
       },
       { code: 'D', data: { kind: 'P', name: '' } },
@@ -117,11 +141,31 @@ export class Client {
       { code: 'C', data: { kind: 'P', name: '' } },
       { code: 'S' },
     ]
-    return Command.create(this.#stream.acquire(), packets, (state, stream) => {
-      this.#state = state
-      stream.release()
-    })
+    return Command.create(
+      this.acquireStream(),
+      packets,
+      this.releaseStream.bind(this)
+    ).map(record)
   }
+
+  acquireStream() {
+    return this.#stream.acquire()
+  }
+
+  releaseStream(state: ReadyState, stream: Stream) {
+    this.#state = state
+    stream.release()
+  }
+}
+
+function record(row: [RawValue[], Field[]]): Record<string, unknown> {
+  const record: Record<string, unknown> = {}
+  for (let i = 0; i < row[0].length; ++i) {
+    const val = row[0][i]
+    const field = row[1][i]
+    record[field.name] = decode(val, field)
+  }
+  return record
 }
 
 function createReadable(
@@ -242,4 +286,13 @@ async function connect(options: ConnectOptions = {}): Promise<Deno.Conn> {
       return Deno.connect({ port, hostname })
     }
   }
+}
+
+function isNotAsyncPacket(
+  packet: BackendPacket
+): packet is Exclude<
+  BackendPacket,
+  NoticeResponse | NotificationResponse | ParameterStatus
+> {
+  return packet.code !== 'A' && packet.code !== 'N' && packet.code !== 'S'
 }
