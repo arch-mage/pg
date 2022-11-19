@@ -30,7 +30,7 @@ export class Decoder {
 
   constructor(buff?: Uint8Array) {
     this.#pos = 0
-    this.#dec = new TextDecoder()
+    this.#dec = new TextDecoder('utf-8', { fatal: true })
     this.#data = buff ?? new Uint8Array()
   }
 

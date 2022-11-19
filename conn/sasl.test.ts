@@ -59,7 +59,7 @@ Deno.test('sasl', async () => {
   for (let i = 1; i <= 100; ++i) {
     const password = randomString()
     const clientNonce = randomString()
-    const devnull = new WritableStream<FrontendPacket[]>()
+    const devnull = new WritableStream<FrontendPacket>()
     const reader = packets(
       await createPackets(
         password,
@@ -75,7 +75,7 @@ Deno.test('sasl', async () => {
 
 Deno.test('sasl errors', async () => {
   function saslTest(packs: BackendPacket[]) {
-    const devnull = new WritableStream<FrontendPacket[]>()
+    const devnull = new WritableStream<FrontendPacket>()
     const reader = packets(packs)
     return sasl(devnull.getWriter(), reader.getReader(), 'password', 'client')
   }

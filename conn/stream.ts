@@ -1,24 +1,77 @@
-import { BackendPacket, RowDescription } from '../decoder/packet-decoder.ts'
+import { BackendPacket } from '../decoder/packet-decoder.ts'
 import { FrontendPacket } from '../encoder/packet-encoder.ts'
 import { UnexpectedBackendPacket } from '../errors.ts'
 import { compose, maybeBackendError, noop } from '../utils.ts'
 import { extract } from './extract.ts'
+import type { Field, Writer, Reader, RawValue, ReadyState } from './types.ts'
 
-export interface Stream {
-  send(packets: FrontendPacket[]): Promise<void>
-  recv(): Promise<BackendPacket | null>
+type Release = (state: ReadyState | null, stream: Stream) => void
+
+export class Stream {
+  readonly #queue: Array<(stream: this) => void>
+  readonly #writer: Writer
+  readonly #reader: Reader
+
+  #streaming: boolean
+
+  constructor(writer: Writer, reader: Reader) {
+    this.#queue = []
+    this.#writer = writer
+    this.#reader = reader
+    this.#streaming = false
+  }
+
+  get writer(): Writer {
+    return this.#writer
+  }
+
+  get reader(): Reader {
+    return this.#reader
+  }
+
+  close(): void {
+    this.#writer.releaseLock()
+    this.#reader.releaseLock()
+  }
+
+  async send(packets: FrontendPacket[]): Promise<void> {
+    await this.#writer.ready
+    for (const packet of packets) {
+      await this.#writer.write(packet)
+    }
+  }
+
+  async recv(): Promise<BackendPacket | null> {
+    const { value } = await this.#reader.read()
+    return value ?? null
+  }
+
+  acquire(): Promise<Stream> {
+    if (this.#streaming) {
+      return new Promise((resolve) => this.#queue.push(resolve))
+    } else {
+      this.#streaming = true
+      return Promise.resolve(this)
+    }
+  }
+
+  release() {
+    const resolve = this.#queue.shift()
+    if (!resolve) {
+      this.#streaming = false
+      return
+    }
+    resolve(this)
+  }
+
+  command(packets: FrontendPacket[]) {
+    return Command.create(this.acquire(), packets, this.release.bind(this))
+  }
 }
-
-type Release = (stream: Stream, state: null | 'I' | 'E' | 'T') => void
-
-type RawValue = Uint8Array | null
-
-type Field = RowDescription['data'][number]
 
 interface StateIdle {
   code: 'idle'
-  query: string
-  params: RawValue[]
+  packets: FrontendPacket[]
 }
 
 interface StateInit {
@@ -34,7 +87,7 @@ interface StateRunning {
 
 interface StateClosed {
   code: 'closed'
-  state: null | 'I' | 'E' | 'T'
+  state: ReadyState
 }
 
 type State = StateIdle | StateInit | StateRunning | StateClosed
@@ -46,17 +99,12 @@ export class Command<T> {
   #state: State
 
   static create(
-    query: string,
-    params: RawValue[],
     stream: Promise<Stream>,
+    packets: FrontendPacket[],
     release: Release
   ): Command<[RawValue[], Field[]]> {
-    return new Command(
-      stream,
-      { code: 'idle', query, params },
-      release,
-      noop<[RawValue[], Field[]]>
-    )
+    const state: StateIdle = { code: 'idle', packets }
+    return new Command(stream, state, release, noop<[RawValue[], Field[]]>)
   }
 
   constructor(
@@ -113,9 +161,9 @@ export class Command<T> {
     )
   }
 
-  #close(state: null | 'I' | 'E' | 'T' = null) {
+  #close(state: ReadyState = null) {
     if (this.#state.code === 'init' || this.#state.code === 'running') {
-      this.#release(this.#state.stream, state)
+      this.#release(state, this.#state.stream)
     }
     this.#state = { code: 'closed', state }
   }
@@ -132,16 +180,9 @@ export class Command<T> {
     }
   }
 
-  async #send(stream: Stream, query: string, params: RawValue[]) {
+  async #send(stream: Stream, packets: FrontendPacket[]) {
     try {
-      await stream.send([
-        parse(query),
-        bind(params),
-        describe(),
-        execute(),
-        close(),
-        sync(),
-      ])
+      await stream.send(packets)
     } catch (error) {
       this.#close()
       throw error
@@ -152,10 +193,10 @@ export class Command<T> {
     if (this.#state.code !== 'idle') {
       return
     }
-    const { query, params } = this.#state
+    const { packets } = this.#state
     const stream = await this.#stream
     this.#state = { code: 'init', stream }
-    await this.#send(stream, query, params)
+    await this.#send(stream, packets)
     try {
       extract('1', await stream.recv())
       extract('2', await stream.recv())
@@ -230,37 +271,4 @@ export class Command<T> {
       throw maybeBackendError(error)
     }
   }
-}
-
-function parse(query: string, name = ''): FrontendPacket {
-  return { code: 'P', data: { name, query, formats: [] } }
-}
-
-function bind(params: RawValue[], stmt = ''): FrontendPacket {
-  return {
-    code: 'B',
-    data: {
-      stmt,
-      portal: '',
-      params,
-      paramFormats: [],
-      resultFormats: [],
-    },
-  }
-}
-
-function describe(): FrontendPacket {
-  return { code: 'D', data: { kind: 'P', name: '' } }
-}
-
-function execute(): FrontendPacket {
-  return { code: 'E', data: { max: 0, name: '' } }
-}
-
-function close(): FrontendPacket {
-  return { code: 'C', data: { kind: 'P', name: '' } }
-}
-
-function sync(): FrontendPacket {
-  return { code: 'S' }
 }

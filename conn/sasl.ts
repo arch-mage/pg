@@ -7,13 +7,13 @@ import { hasProp, putInt32 } from '../utils.ts'
 import { extract } from './extract.ts'
 
 export async function sasl(
-  writer: WritableStreamDefaultWriter<FrontendPacket[]>,
+  writer: WritableStreamDefaultWriter<FrontendPacket>,
   reader: ReadableStreamDefaultReader<BackendPacket>,
   password: string,
   nonce: string
 ) {
   await writer.ready
-  await writer.write([{ code: 'p', data: encodeInit(nonce) }])
+  await writer.write({ code: 'p', data: encodeInit(nonce) })
   const serverFirstMessage = extractAuth(
     11,
     extract('R', await reader.read().then((res) => res.value))
@@ -76,7 +76,7 @@ export async function sasl(
 
   // prettier-ignore
   const clientFinalMessage = clientFinalMessageWithoutProof + ',p=' + clientProof
-  await writer.write([{ code: 'p', data: enc.encode(clientFinalMessage) }])
+  await writer.write({ code: 'p', data: enc.encode(clientFinalMessage) })
 
   const serverFinalMessage = extractAuth(
     12,
