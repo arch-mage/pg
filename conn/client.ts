@@ -20,6 +20,7 @@ import { FrontendPacket, PacketEncoder } from '../encoder/packet-encoder.ts'
 import { encode, Value } from '../encoder/text.ts'
 import { decode } from '../decoder/text.ts'
 import { filter } from './transform.ts'
+import { base64 } from '../deps.ts'
 
 export interface ConnectOptions {
   ssl?: boolean
@@ -246,7 +247,8 @@ async function startup(
     if (auth.code === 0) {
       // OK
     } else if (auth.code === 10) {
-      await sasl(writer, reader, password, 'nonce')
+      const nonce = base64.encode(crypto.getRandomValues(new Uint8Array(18)))
+      await sasl(writer, reader, password, nonce)
     }
 
     const params = new Map<string, string>()

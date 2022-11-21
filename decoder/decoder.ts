@@ -117,10 +117,10 @@ export class Decoder {
       this.#pos += buff.length
       return buff
     }
-    const buff = this.buff.slice(this.#pos, this.#pos + size)
-    if (buff.length !== size) {
+    if (this.#pos + size > this.buff.length) {
       throw new DecodeError(`not a bytes with length of ${size}`)
     }
+    const buff = this.buff.slice(this.#pos, this.#pos + size)
     this.#pos += buff.length
     return buff
   }
