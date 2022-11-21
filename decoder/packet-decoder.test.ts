@@ -341,15 +341,11 @@ Deno.test('chunked', () => {
   dec.feed(uint8('1', 0, 0, 0, 4, '2'))
   assertEquals(dec.decode(), { code: '1' })
   assertEquals(dec.decode(), null)
-  // assertEquals(dec.data, uint8('2'))
   dec.feed(uint8(0, 0, 0))
   assertEquals(dec.decode(), null)
-  // assertEquals(dec.data, uint8('2', 0, 0, 0))
   dec.feed(uint8(4))
-  // assertEquals(dec.data, uint8('2', 0, 0, 0, 4))
   assertEquals(dec.decode(), { code: '2' })
   assertEquals(dec.decode(), null)
-  // assertEquals(dec.data, uint8())
 
   dec.feed(uint8('R', 0, 0, 0, 8, 0))
   assertEquals(dec.decode(), null)
@@ -358,7 +354,6 @@ Deno.test('chunked', () => {
   dec.feed(uint8(0, 'S'))
   assertEquals(dec.decode(), { code: 'R', data: { code: 0 } })
   assertEquals(dec.decode(), null)
-  // assertEquals(dec.data, uint8('S'))
 })
 
 Deno.test('iterator', () => {

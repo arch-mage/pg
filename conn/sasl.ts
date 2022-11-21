@@ -149,13 +149,6 @@ export async function hmac256(password: Uint8Array, message: Uint8Array) {
 }
 
 function xorBuffer(a: Uint8Array, b: Uint8Array) {
-  // if (a.length !== b.length) {
-  //   throw new TypeError('mismatch array length')
-  // }
-  // if (a.length === 0) {
-  //   throw new TypeError('empty array')
-  // }
-
   const c = new Uint8Array(a.length)
   for (let i = 0; i < a.length; ++i) {
     c[i] = a[i] ^ b[i]
