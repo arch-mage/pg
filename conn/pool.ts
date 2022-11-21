@@ -24,32 +24,18 @@ export class Pool extends GenericPool<Client> {
 
   query(query: string, params: Value[] = []) {
     const packets = queryPackets(query, params, this.#enc)
-    const sentinel = new Sentinel(this.release.bind(this))
-    const acquire = sentinel.acquire.bind(sentinel)
-    const release = sentinel.release.bind(sentinel)
-    return Command.create(this.acquire().then(acquire), packets, release).map(
-      record
-    )
-  }
-}
 
-class Sentinel {
-  client: Client | null = null
-  readonly #release: (client: Client) => void
-
-  constructor(release: (client: Client) => void) {
-    this.#release = release
-  }
-
-  acquire(client: Client) {
-    this.client = client
-    return client.acquireStream()
-  }
-
-  release(state: ReadyState, stream: Stream) {
-    if (this.client) {
-      this.client.releaseStream(state, stream)
-      this.#release(this.client)
+    let client: Client | null = null
+    const acquire = async () => {
+      client = await this.acquire()
+      return client.acquireStream()
     }
+    const release = (state: ReadyState, stream: Stream) => {
+      if (!client) return
+      client.releaseStream(state, stream)
+      this.release(client)
+      client = null
+    }
+    return Command.create(packets, acquire, release).map(record)
   }
 }

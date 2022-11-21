@@ -74,8 +74,8 @@ Deno.test('command init error', async () => {
   const packets: BackendPacket[] = [{ code: '1' }, { code: '2' }, { code: '3' }]
   const stream = createStream(packets)
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   )
   await assertRejects(
@@ -97,8 +97,8 @@ Deno.test('command init send error', async () => {
   const release = spy()
   const stream = new Stream(writable.getWriter(), packets([]).getReader())
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   )
   await assertRejects(() => command, Error, 'failed')
@@ -116,8 +116,8 @@ Deno.test('command await error (before command complete)', async () => {
   ]
   const stream = createStream(packets)
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   )
   await assertRejects(
@@ -143,8 +143,8 @@ Deno.test('command await error (after command complete)', async () => {
   ]
   const stream = createStream(packets)
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   )
   await assertRejects(
@@ -171,8 +171,8 @@ Deno.test('command await error (after close complete)', async () => {
   ]
   const stream = createStream(packets)
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   )
   await assertRejects(() => command, PostgresError, 'error')
@@ -195,8 +195,8 @@ Deno.test('command await data', async () => {
   ]
   const stream = createStream(packets)
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   )
   assertEquals(await command, [
@@ -221,8 +221,8 @@ Deno.test('command await no data', async () => {
   ]
   const stream = createStream(packets)
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   )
   assertEquals(await command, null)
@@ -244,8 +244,8 @@ Deno.test('command iter error (before command complete)', async () => {
   ]
   const stream = createStream(packets)
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   )
   assertEquals(await command.next(), { done: false, value: [[], []] })
@@ -273,8 +273,8 @@ Deno.test('command iter error (after command complete)', async () => {
   ]
   const stream = createStream(packets)
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   )
   assertEquals(await command.next(), { done: false, value: [[], []] })
@@ -303,8 +303,8 @@ Deno.test('command iter error (after close complete)', async () => {
   ]
   const stream = createStream(packets)
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   )
   assertEquals(await command.next(), { done: false, value: [[], []] })
@@ -329,8 +329,8 @@ Deno.test('command iter data', async () => {
   ]
   const stream = createStream(packets)
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   )
   assertEquals(await command.next(), { done: false, value: [[], []] })
@@ -354,8 +354,8 @@ Deno.test('command await no data', async () => {
   ]
   const stream = createStream(packets)
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   )
   assertEquals(await command.next(), { done: true, value: null })
@@ -378,8 +378,8 @@ Deno.test('command promise api catch', async () => {
   ]
   const stream = createStream(packets)
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   )
   assertEquals(
@@ -405,8 +405,8 @@ Deno.test('command promise api finally', async () => {
   ]
   const stream = createStream(packets)
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   )
   await assertRejects(() => command.finally(final))
@@ -431,8 +431,8 @@ Deno.test('command iterator api return (early)', async () => {
   ]
   const stream = createStream(packets)
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   )
   for await (const _ of command) {
@@ -457,8 +457,8 @@ Deno.test('command iterator api return (after release)', async () => {
   ]
   const stream = createStream(packets)
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   )
   await command.next()
@@ -485,8 +485,8 @@ Deno.test('command mapped output', async () => {
   ]
   const stream = createStream(packets)
   const command = Command.create(
-    Promise.resolve(stream),
     query('', []),
+    () => Promise.resolve(stream),
     release
   ).map(() => 2)
   assertEquals(await command, [2, 2])

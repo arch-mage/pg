@@ -5,8 +5,6 @@ import { compose, maybeBackendError, noop } from '../utils.ts'
 import { extract } from './extract.ts'
 import type { Field, Writer, Reader, RawValue, ReadyState } from './types.ts'
 
-type Release = (state: ReadyState | null, stream: Stream) => void
-
 export class Stream {
   readonly #queue: Array<(stream: this) => void>
   readonly #writer: Writer
@@ -57,7 +55,11 @@ export class Stream {
   }
 
   command(packets: FrontendPacket[]) {
-    return Command.create(this.acquire(), packets, this.release.bind(this))
+    return Command.create(
+      packets,
+      this.acquire.bind(this),
+      this.release.bind(this)
+    )
   }
 }
 
@@ -86,28 +88,28 @@ type State = StateIdle | StateInit | StateRunning | StateClosed
 
 export class Command<T> {
   readonly #mapper: (value: [RawValue[], Field[]]) => T
-  readonly #stream: Promise<Stream>
-  readonly #release: Release
+  readonly #acquire: () => Promise<Stream>
+  readonly #release: (state: ReadyState | null, stream: Stream) => void
   #state: State
 
   static create(
-    stream: Promise<Stream>,
     packets: FrontendPacket[],
-    release: Release
+    acquire: () => Promise<Stream>,
+    release: (state: ReadyState | null, stream: Stream) => void
   ): Command<[RawValue[], Field[]]> {
     const state: StateIdle = { code: 'idle', packets }
-    return new Command(stream, state, release, noop<[RawValue[], Field[]]>)
+    return new Command(state, acquire, release, noop<[RawValue[], Field[]]>)
   }
 
   constructor(
-    stream: Promise<Stream>,
     state: State,
-    release: Release,
+    acquire: () => Promise<Stream>,
+    release: (state: ReadyState | null, stream: Stream) => void,
     mapper: (value: [RawValue[], Field[]]) => T
   ) {
     this.#state = state
     this.#mapper = mapper
-    this.#stream = stream
+    this.#acquire = acquire
     this.#release = release
   }
 
@@ -146,8 +148,8 @@ export class Command<T> {
 
   map<U>(mapper: (value: T) => U): Command<U> {
     return new Command(
-      this.#stream,
       this.#state,
+      this.#acquire,
       this.#release,
       compose(mapper, this.#mapper)
     )
@@ -186,7 +188,7 @@ export class Command<T> {
       return
     }
     const { packets } = this.#state
-    const stream = await this.#stream
+    const stream = await this.#acquire()
     this.#state = { code: 'init', stream }
     await this.#send(stream, packets)
     try {

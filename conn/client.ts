@@ -126,8 +126,8 @@ export class Client {
   query(query: string, params: Value[] = []) {
     const packets = queryPackets(query, params, this.#enc)
     return Command.create(
-      this.acquireStream(),
       packets,
+      this.acquireStream.bind(this),
       this.releaseStream.bind(this)
     ).map(record)
   }
