@@ -86,7 +86,7 @@ interface StateClosed {
 
 type State = StateIdle | StateInit | StateRunning | StateClosed
 
-export class Command<T> {
+export class Command<T> implements AsyncIterableIterator<T> {
   readonly #mapper: (value: [RawValue[], Field[]]) => T
   readonly #acquire: () => Promise<Stream>
   readonly #release: (state: ReadyState | null, stream: Stream) => void
@@ -146,6 +146,13 @@ export class Command<T> {
     return { done: true, value: null }
   }
 
+  async throw(e?: unknown): Promise<IteratorResult<T, null>> {
+    if (this.#state.code === 'init' || this.#state.code === 'running') {
+      this.#close(await this.#exhaust(this.#state.stream))
+    }
+    throw e
+  }
+
   map<U>(mapper: (value: T) => U): Command<U> {
     return new Command(
       this.#state,
@@ -196,15 +203,24 @@ export class Command<T> {
       extract('2', await stream.recv())
       const packet = extract(await stream.recv())
 
+      if (packet.code === 'T') {
+        this.#state = { code: 'running', stream, fields: packet.data }
+        return
+      }
+
       if (packet.code === 'n') {
-        extract('C', await stream.recv())
+        const packet = extract(await stream.recv())
+        if (packet.code !== 'C' && packet.code !== 'I') {
+          throw new UnexpectedBackendPacket(packet, ['C', 'I'])
+        }
         extract('3', await stream.recv())
         return this.#close(extract('Z', await stream.recv()))
       }
 
-      if (packet.code === 'T') {
-        this.#state = { code: 'running', stream, fields: packet.data }
-        return
+      if (packet.code === 'I') {
+        extract('C', await stream.recv())
+        extract('3', await stream.recv())
+        return this.#close(extract('Z', await stream.recv()))
       }
 
       throw new UnexpectedBackendPacket(packet, ['T', 'n'])

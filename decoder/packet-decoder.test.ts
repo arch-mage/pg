@@ -7,6 +7,62 @@ import {
 } from '../errors.ts'
 import { PacketDecoder } from './packet-decoder.ts'
 
+Deno.test('unrecognized', () => {
+  const dec = new PacketDecoder(uint8('0', 0, 0, 0, 4))
+  assertThrows(
+    () => dec.decode(),
+    UnrecognizedBackendPacket,
+    'unrecognized backend packet: 0'
+  )
+})
+
+Deno.test('chunked', () => {
+  const dec = new PacketDecoder()
+
+  dec.feed(uint8('1', 0, 0, 0, 4, '2'))
+  assertEquals(dec.decode(), { code: '1' })
+  assertEquals(dec.decode(), null)
+  dec.feed(uint8(0, 0, 0))
+  assertEquals(dec.decode(), null)
+  dec.feed(uint8(4))
+  assertEquals(dec.decode(), { code: '2' })
+  assertEquals(dec.decode(), null)
+
+  dec.feed(uint8('R', 0, 0, 0, 8, 0))
+  assertEquals(dec.decode(), null)
+  dec.feed(uint8(0, 0))
+  assertEquals(dec.decode(), null)
+  dec.feed(uint8(0, 'S'))
+  assertEquals(dec.decode(), { code: 'R', data: { code: 0 } })
+  assertEquals(dec.decode(), null)
+})
+
+Deno.test('iterator', () => {
+  // prettier-ignore
+  const dec = new PacketDecoder(
+    uint8(
+      '1', 0, 0, 0, 4,
+      '2', 0, 0, 0, 4,
+      'n', 0, 0, 0, 4,
+      'C', 0, 0, 0, 11, 'SELECT', 0,
+      '3', 0, 0, 0, 4,
+      'Z', 0, 0, 0, 5, 'I'
+    )
+  )
+
+  assertEquals(
+    [...dec],
+    [
+      { code: '1' },
+      { code: '2' },
+      { code: 'n' },
+      { code: 'C', data: 'SELECT' },
+      { code: '3' },
+      { code: 'Z', data: 'I' },
+    ]
+  )
+})
+
 Deno.test('authentication', () => {
   const dec = new PacketDecoder()
   dec.feed(
@@ -52,7 +108,7 @@ Deno.test('authentication', () => {
   )
 })
 
-Deno.test('parameterStatus', () => {
+Deno.test('parameter status', () => {
   assertThrows(
     () =>
       new PacketDecoder(uint8('S', [0, 0, 0, 12], 'app', [0], 'name')).decode(),
@@ -67,7 +123,7 @@ Deno.test('parameterStatus', () => {
   )
 })
 
-Deno.test('backendKeyData', () => {
+Deno.test('backend key data', () => {
   assertThrows(
     () =>
       new PacketDecoder(
@@ -84,7 +140,7 @@ Deno.test('backendKeyData', () => {
   )
 })
 
-Deno.test('readyForQuery', () => {
+Deno.test('ready for query', () => {
   assertThrows(() => new PacketDecoder(uint8('Z', [0, 0, 0, 5], 'A')).decode())
 
   assertEquals(new PacketDecoder(uint8('Z', [0, 0, 0, 5], 'I')).decode(), {
@@ -101,37 +157,37 @@ Deno.test('readyForQuery', () => {
   })
 })
 
-Deno.test('parseComplete', () => {
+Deno.test('parse complete', () => {
   assertEquals(new PacketDecoder(uint8('1', [0, 0, 0, 4])).decode(), {
     code: '1' as const,
   })
 })
 
-Deno.test('bindComplete', () => {
+Deno.test('bind complete', () => {
   assertEquals(new PacketDecoder(uint8('2', [0, 0, 0, 4])).decode(), {
     code: '2' as const,
   })
 })
 
-Deno.test('closeComplete', () => {
+Deno.test('close complete', () => {
   assertEquals(new PacketDecoder(uint8('3', [0, 0, 0, 4])).decode(), {
     code: '3' as const,
   })
 })
 
-Deno.test('portalSuspended', () => {
+Deno.test('portal suspended', () => {
   assertEquals(new PacketDecoder(uint8('s', [0, 0, 0, 4])).decode(), {
     code: 's' as const,
   })
 })
 
-Deno.test('noData', () => {
+Deno.test('no data', () => {
   assertEquals(new PacketDecoder(uint8('n', [0, 0, 0, 4])).decode(), {
     code: 'n' as const,
   })
 })
 
-Deno.test('rowDescription', () => {
+Deno.test('row description', () => {
   assertThrows(
     () =>
       new PacketDecoder(
@@ -217,7 +273,7 @@ Deno.test('rowDescription', () => {
   )
 })
 
-Deno.test('parameterDescription', () => {
+Deno.test('parameter description', () => {
   assertThrows(
     () => new PacketDecoder(uint8('t', [0, 0, 0, 5], [0])).decode(),
     DecodeError,
@@ -232,7 +288,7 @@ Deno.test('parameterDescription', () => {
   )
 })
 
-Deno.test('dataRow', () => {
+Deno.test('data row', () => {
   assertThrows(() =>
     new PacketDecoder(
       uint8('D', [0, 0, 0, 11], [0, 1], [0, 0, 0, 2], [97])
@@ -256,7 +312,7 @@ Deno.test('dataRow', () => {
   )
 })
 
-Deno.test('commandComplete', () => {
+Deno.test('command complete', () => {
   assertEquals(
     new PacketDecoder(uint8('C', [0, 0, 0, 13], 'SELECT 1', [0])).decode(),
     {
@@ -266,7 +322,7 @@ Deno.test('commandComplete', () => {
   )
 })
 
-Deno.test('errorResponse', () => {
+Deno.test('error response', () => {
   assertEquals(
     new PacketDecoder(
       uint8(
@@ -290,7 +346,7 @@ Deno.test('errorResponse', () => {
   )
 })
 
-Deno.test('noticeResponse', () => {
+Deno.test('notice response', () => {
   assertEquals(
     new PacketDecoder(
       uint8(
@@ -314,7 +370,7 @@ Deno.test('noticeResponse', () => {
   )
 })
 
-Deno.test('notificationResponse', () => {
+Deno.test('notification response', () => {
   assertEquals(
     new PacketDecoder(
       uint8('A', [0, 0, 0, 18], [0, 0, 0, 1], 'info', [0], 'info', [0])
@@ -326,63 +382,7 @@ Deno.test('notificationResponse', () => {
   )
 })
 
-Deno.test('unrecognized', () => {
-  const dec = new PacketDecoder(uint8('0', 0, 0, 0, 4))
-  assertThrows(
-    () => dec.decode(),
-    UnrecognizedBackendPacket,
-    'unrecognized backend packet: 0'
-  )
-})
-
-Deno.test('chunked', () => {
-  const dec = new PacketDecoder()
-
-  dec.feed(uint8('1', 0, 0, 0, 4, '2'))
-  assertEquals(dec.decode(), { code: '1' })
-  assertEquals(dec.decode(), null)
-  dec.feed(uint8(0, 0, 0))
-  assertEquals(dec.decode(), null)
-  dec.feed(uint8(4))
-  assertEquals(dec.decode(), { code: '2' })
-  assertEquals(dec.decode(), null)
-
-  dec.feed(uint8('R', 0, 0, 0, 8, 0))
-  assertEquals(dec.decode(), null)
-  dec.feed(uint8(0, 0))
-  assertEquals(dec.decode(), null)
-  dec.feed(uint8(0, 'S'))
-  assertEquals(dec.decode(), { code: 'R', data: { code: 0 } })
-  assertEquals(dec.decode(), null)
-})
-
-Deno.test('iterator', () => {
-  // prettier-ignore
-  const dec = new PacketDecoder(
-    uint8(
-      '1', 0, 0, 0, 4,
-      '2', 0, 0, 0, 4,
-      'n', 0, 0, 0, 4,
-      'C', 0, 0, 0, 11, 'SELECT', 0,
-      '3', 0, 0, 0, 4,
-      'Z', 0, 0, 0, 5, 'I'
-    )
-  )
-
-  assertEquals(
-    [...dec],
-    [
-      { code: '1' },
-      { code: '2' },
-      { code: 'n' },
-      { code: 'C', data: 'SELECT' },
-      { code: '3' },
-      { code: 'Z', data: 'I' },
-    ]
-  )
-})
-
-Deno.test('copyInResponse', () => {
+Deno.test('copy in response', () => {
   assertThrows(
     () => {
       new PacketDecoder(
@@ -412,7 +412,7 @@ Deno.test('copyInResponse', () => {
   )
 })
 
-Deno.test('copyOutResponse', () => {
+Deno.test('copy out response', () => {
   assertThrows(
     () => {
       new PacketDecoder(
@@ -442,7 +442,7 @@ Deno.test('copyOutResponse', () => {
   )
 })
 
-Deno.test('copyData', () => {
+Deno.test('copy data', () => {
   const dec = new PacketDecoder(
     uint8([
       100, 0, 0, 0, 15, 49, 9, 65, 115, 115, 101, 116, 9, 92, 78, 10, 100, 0, 0,
@@ -462,8 +462,14 @@ Deno.test('copyData', () => {
   })
 })
 
-Deno.test('copyDone', () => {
+Deno.test('copy done', () => {
   const dec = new PacketDecoder(uint8('c', [0, 0, 0, 4]))
 
   assertEquals(dec.decode(), { code: 'c' })
+})
+
+Deno.test('empty query response', () => {
+  const dec = new PacketDecoder(uint8('I', [0, 0, 0, 4]))
+
+  assertEquals(dec.decode(), { code: 'I' })
 })

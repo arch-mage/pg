@@ -135,6 +135,10 @@ export class PacketDecoder extends Decoder {
       }
       return { code, data: { format, formats } }
     }
+    if (code === 'I') {
+      // EmptyQueryResponse (B)
+      return { code }
+    }
     if (code === 'K') {
       // BackendKeyData (B)
       return {
@@ -247,7 +251,6 @@ export class PacketDecoder extends Decoder {
     }
 
     // CopyBothResponse (B)
-    // EmptyQueryResponse (B)
     // FunctionCallResponse (B)
     // NegotiateProtocolVersion (B)
     throw new UnrecognizedBackendPacket(code)
@@ -324,6 +327,10 @@ export interface CopyOutResponse {
   }
 }
 
+export interface EmptyQueryResponse {
+  code: 'I'
+}
+
 export interface BackendKeyData {
   code: 'K'
   data: {
@@ -393,6 +400,7 @@ export type BackendPacket =
   | ErrorResponse
   | CopyInResponse
   | CopyOutResponse
+  | EmptyQueryResponse
   | BackendKeyData
   | NoticeResponse
   | NoData
