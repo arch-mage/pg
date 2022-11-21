@@ -24,7 +24,6 @@ Deno.test('pool state', async () => {
     max: 2,
     create: () => Promise.resolve(gen.next().value),
     destroy: noop,
-    timeout: 1000,
   })
   const prom1 = pool.acquire()
   const prom2 = pool.acquire()
@@ -79,7 +78,6 @@ Deno.test('destroy', async () => {
     max: 2,
     create: () => Promise.resolve(gen.next().value),
     destroy,
-    timeout: 1000,
   })
   await pool.acquire()
   await pool.acquire()
@@ -113,10 +111,10 @@ Deno.test('timeout', async () => {
         return gen.next().value
       },
       destroy,
-      timeout: 1000,
+      acquireTimeout: 1000,
     })
     const ret = pool.acquire()
-    time.tick(3000)
+    await time.tickAsync(3000)
     await assertRejects(
       () => ret,
       TimeoutError,
@@ -138,7 +136,6 @@ Deno.test('queue', async () => {
     max: 2,
     create: () => Promise.resolve(gen.next().value),
     destroy: noop,
-    timeout: 1000,
   })
 
   await pool.acquire()
@@ -189,7 +186,7 @@ Deno.test('sane shutting down', async () => {
     max: 4,
     create: () => Promise.resolve(gen.next().value),
     destroy,
-    timeout: 1000,
+    acquireTimeout: 1000,
   })
 
   await pool.acquire()
@@ -221,7 +218,7 @@ Deno.test('queue on shutting down', async () => {
     max: 2,
     create: () => Promise.resolve(gen.next().value),
     destroy,
-    timeout: 1000,
+    acquireTimeout: 1000,
   })
 
   await pool.acquire()
@@ -252,7 +249,7 @@ Deno.test('acquire on shutting down', async () => {
     max: 4,
     create: () => Promise.resolve(gen.next().value),
     destroy,
-    timeout: 1000,
+    acquireTimeout: 1000,
   })
 
   pool.shutdown()
@@ -266,7 +263,7 @@ Deno.test('wait on shutting down', async () => {
     max: 2,
     create: () => Promise.resolve(gen.next().value),
     destroy,
-    timeout: 1000,
+    acquireTimeout: 1000,
   })
 
   const a1 = pool.acquire()
@@ -284,4 +281,56 @@ Deno.test('wait on shutting down', async () => {
   assertEquals(pool.state, 'C')
   assertEquals(pool.elem, 0)
   assertSpyCalls(destroy, 2)
+})
+
+Deno.test('idle timeout', async () => {
+  const time = new FakeTime()
+
+  try {
+    const gen = seed()
+    const destroy = spy(async () => {})
+    const pool = new Pool({
+      max: 2,
+      create: () => Promise.resolve(gen.next().value),
+      destroy,
+      idleTimeout: 1000,
+    })
+
+    const a1 = await pool.acquire()
+    const a2 = await pool.acquire()
+    pool.release(a1)
+    assertEquals(pool.idle, 1)
+    assertEquals(pool.busy, 1)
+    assertEquals(pool.elem, 2)
+    await time.tickAsync(2000)
+    assertSpyCalls(destroy, 1)
+    assertSpyCallArg(destroy, 0, 0, 1)
+    assertEquals(pool.idle, 0)
+    assertEquals(pool.busy, 1)
+    assertEquals(pool.elem, 1)
+    pool.release(a2)
+    assertEquals(pool.idle, 1)
+    assertEquals(pool.busy, 0)
+    assertEquals(pool.elem, 1)
+    await time.tickAsync(2000)
+    assertSpyCalls(destroy, 2)
+    assertSpyCallArg(destroy, 1, 0, 2)
+    assertEquals(pool.idle, 0)
+    assertEquals(pool.busy, 0)
+    assertEquals(pool.elem, 0)
+
+    let a3
+    a3 = await pool.acquire()
+    pool.release(a3)
+    await time.tickAsync(500)
+    a3 = await pool.acquire()
+    assertEquals(a3, 3)
+    await time.tickAsync(2000)
+    assertSpyCalls(destroy, 2)
+    assertEquals(pool.idle, 0)
+    assertEquals(pool.busy, 1)
+    assertEquals(pool.elem, 1)
+  } finally {
+    time.restore()
+  }
 })

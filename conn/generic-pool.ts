@@ -6,7 +6,8 @@ export interface PoolOptions<T> {
   max: number
   create: () => Promise<T>
   destroy: (value: T) => Promise<void>
-  timeout: number
+  idleTimeout?: number
+  acquireTimeout?: number
 }
 
 interface Executor<T> {
@@ -24,13 +25,15 @@ export class Pool<T> extends EventTarget {
   readonly #max: number
   readonly #create: () => Promise<T>
   readonly #destroy: (value: T) => Promise<void>
-  readonly #timeout: number
+  readonly #idleTimeout?: number
+  readonly #acquireTimeout?: number
 
   readonly #idle: T[]
   readonly #busy: T[]
   readonly #wait: Promise<T>[]
   readonly #queue: Executor<T>[]
   readonly #closing: Executor<T>[]
+  readonly #timeouts: Map<T, number>
   #state: State
 
   constructor(options: PoolOptions<T>) {
@@ -38,7 +41,8 @@ export class Pool<T> extends EventTarget {
     this.#max = options.max
     this.#create = options.create
     this.#destroy = options.destroy
-    this.#timeout = options.timeout
+    this.#idleTimeout = options.idleTimeout
+    this.#acquireTimeout = options.acquireTimeout
 
     this.#idle = []
     this.#busy = []
@@ -46,6 +50,7 @@ export class Pool<T> extends EventTarget {
     this.#queue = []
     this.#state = State.Ready
     this.#closing = []
+    this.#timeouts = new Map()
   }
 
   get idle() {
@@ -97,24 +102,33 @@ export class Pool<T> extends EventTarget {
 
     const controller = new AbortController()
     const promise = this.#create().then(hijack)
-    let raced
     this.#wait.push(promise)
-    try {
-      raced = await Promise.race([
-        promise,
-        delay(this.#timeout, { signal: controller.signal }),
-      ])
-    } finally {
-      remove(this.#wait, promise)
+
+    let resource
+    if (typeof this.#acquireTimeout === 'number') {
+      try {
+        resource = await Promise.race([
+          promise,
+          delay(this.#acquireTimeout, { signal: controller.signal }),
+        ])
+      } finally {
+        remove(this.#wait, promise)
+      }
+      if (!resource) {
+        destroy = this.#destroy
+        throw new TimeoutError(this.#acquireTimeout)
+      }
+      controller.abort()
+    } else {
+      try {
+        resource = await promise
+      } finally {
+        remove(this.#wait, promise)
+      }
     }
-    if (!raced) {
-      destroy = this.#destroy
-      throw new TimeoutError(this.#timeout)
-    }
-    controller.abort()
-    this.#busy.push(raced)
+    this.#busy.push(resource)
     this.dispatchEvent(new Event('acquire'))
-    return raced
+    return resource
   }
 
   release(value: T) {
@@ -125,6 +139,13 @@ export class Pool<T> extends EventTarget {
     this.dispatchEvent(new Event('release'))
 
     if (this.#state === State.Ready) {
+      if (typeof this.#idleTimeout === 'number') {
+        const timeout = setTimeout(
+          () => this.#destroyIdle(busy),
+          this.#idleTimeout
+        )
+        this.#timeouts.set(busy, timeout)
+      }
       this.#idle.push(busy)
       const queue = this.#queue.shift()
       if (queue) {
@@ -152,7 +173,25 @@ export class Pool<T> extends EventTarget {
       return
     }
     this.dispatchEvent(new Event('destroy'))
-    await this.#destroy(busy)
+    await this.#destroy(value)
+
+    const queue = this.#queue.shift()
+    if (queue) {
+      this.acquire().then(queue.resolve, queue.reject)
+    }
+  }
+
+  async #destroyIdle(value: T) {
+    const timeout = this.#timeouts.get(value)
+    if (timeout) {
+      clearTimeout(timeout)
+      this.#timeouts.delete(value)
+    }
+    const idle = remove(this.#idle, value)
+    if (!idle) {
+      return
+    }
+    await this.#destroy(idle)
 
     const queue = this.#queue.shift()
     if (queue) {

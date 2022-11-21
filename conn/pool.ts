@@ -7,15 +7,17 @@ import { ReadyState } from './types.ts'
 
 export interface PoolOptions extends ClientOptions {
   max?: number
-  timeout?: number
+  idleTimeout?: number
+  acquireTimeout?: number
 }
 
 export class Pool extends GenericPool<Client> {
   readonly #enc: PacketEncoder
-  constructor({ max, timeout, ...options }: PoolOptions) {
+  constructor({ max, idleTimeout, acquireTimeout, ...options }: PoolOptions) {
     super({
       max: max ?? 10,
-      timeout: timeout ?? 60000,
+      idleTimeout,
+      acquireTimeout,
       create: () => Client.connect(options),
       destroy: (client) => client.shutdown(),
     })
