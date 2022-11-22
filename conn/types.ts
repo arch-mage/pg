@@ -10,7 +10,7 @@ export type Reader = ReadableStreamDefaultReader<BackendPacket>
 export type Writable = WritableStream<FrontendPacket>
 export type Readable = ReadableStream<BackendPacket>
 export type RawValue = Uint8Array | null
-export type ReadyState = 'I' | 'T' | 'E' | null
+export type ReadyState = 'I' | 'T' | 'E'
 
 export interface Listener<T> {
   (evt: CustomEvent<T>): void | Promise<void>

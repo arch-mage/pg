@@ -81,7 +81,7 @@ interface StateRunning {
 
 interface StateClosed {
   code: 'closed'
-  state: ReadyState
+  state: ReadyState | null
 }
 
 type State = StateIdle | StateInit | StateRunning | StateClosed
@@ -162,7 +162,7 @@ export class Command<T> implements AsyncIterableIterator<T> {
     )
   }
 
-  #close(state: ReadyState = null) {
+  #close(state: ReadyState | null = null) {
     if (this.#state.code === 'init' || this.#state.code === 'running') {
       this.#release(state, this.#state.stream)
     }

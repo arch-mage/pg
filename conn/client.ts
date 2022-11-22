@@ -112,6 +112,22 @@ export class Client {
     )
   }
 
+  get secret(): number {
+    return this.#secret
+  }
+
+  get process(): number {
+    return this.#process
+  }
+
+  get state(): ReadyState {
+    return this.#state
+  }
+
+  param(name: string): string | undefined {
+    return this.#params.get(name)
+  }
+
   close(): void {
     this.#stream.close()
     this.#conn.close()
@@ -136,8 +152,8 @@ export class Client {
     return this.#stream.acquire()
   }
 
-  releaseStream(state: ReadyState, stream: Stream) {
-    this.#state = state
+  releaseStream(state: ReadyState | null, stream: Stream) {
+    if (state) this.#state = state
     stream.release()
   }
 }

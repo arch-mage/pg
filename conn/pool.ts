@@ -32,7 +32,7 @@ export class Pool extends GenericPool<Client> {
       client = await this.acquire()
       return client.acquireStream()
     }
-    const release = (state: ReadyState, stream: Stream) => {
+    const release = (state: ReadyState | null, stream: Stream) => {
       if (!client) return
       client.releaseStream(state, stream)
       this.release(client)
