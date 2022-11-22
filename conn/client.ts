@@ -21,6 +21,7 @@ import { encode, Value } from '../encoder/text.ts'
 import { decode } from '../decoder/text.ts'
 import { filter } from './transform.ts'
 import { base64 } from '../deps.ts'
+import { PostgresError } from '../errors.ts'
 
 export interface ConnectOptions {
   ssl?: boolean
@@ -143,6 +144,83 @@ export class Client {
     const packets = queryPackets(query, params, this.#enc)
     return Command.create(
       packets,
+      this.acquireStream.bind(this),
+      this.releaseStream.bind(this)
+    ).map(record)
+  }
+
+  async prepare(name: string, query: string) {
+    const stream = await this.acquireStream()
+    let state: ReadyState | null = null
+    try {
+      await stream.send([
+        { code: 'P', data: { query, name, formats: [] } },
+        { code: 'S' },
+      ])
+
+      for (;;) {
+        let packet = extract(await stream.recv())
+        if (packet.code === 'Z') {
+          state = packet.data
+          break
+        }
+        if (packet.code === 'E') {
+          const error = new PostgresError(packet.data)
+          packet = extract(await stream.recv())
+          state = extract('Z', packet)
+          throw error
+        }
+      }
+    } finally {
+      this.releaseStream(state, stream)
+    }
+  }
+
+  async deallocate(name: string) {
+    const stream = await this.acquireStream()
+    let state: ReadyState | null = null
+    try {
+      await stream.send([
+        { code: 'C', data: { kind: 'S', name } },
+        { code: 'S' },
+      ])
+
+      for (;;) {
+        let packet = extract(await stream.recv())
+        if (packet.code === 'Z') {
+          state = packet.data
+          break
+        }
+        if (packet.code === 'E') {
+          const error = new PostgresError(packet.data)
+          packet = extract(await stream.recv())
+          state = extract('Z', packet)
+          throw error
+        }
+      }
+    } finally {
+      this.releaseStream(state, stream)
+    }
+  }
+
+  execute(name: string, params: Value[] = []) {
+    return Command.create(
+      [
+        {
+          code: 'B',
+          data: {
+            stmt: name,
+            portal: '',
+            params: params.map((value) => encode(value, this.#enc)),
+            paramFormats: [0],
+            resultFormats: [0],
+          },
+        },
+        { code: 'D', data: { kind: 'P', name: '' } },
+        { code: 'E', data: { max: 0, name: '' } },
+        { code: 'C', data: { kind: 'P', name: '' } },
+        { code: 'S' },
+      ],
       this.acquireStream.bind(this),
       this.releaseStream.bind(this)
     ).map(record)

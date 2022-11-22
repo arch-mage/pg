@@ -1,6 +1,6 @@
 import { BackendPacket } from '../decoder/packet-decoder.ts'
 import { FrontendPacket } from '../encoder/packet-encoder.ts'
-import { UnexpectedBackendPacket } from '../errors.ts'
+import { PostgresError, UnexpectedBackendPacket } from '../errors.ts'
 import { compose, maybeBackendError, noop } from '../utils.ts'
 import { extract } from './extract.ts'
 import type { Field, Writer, Reader, RawValue, ReadyState } from './types.ts'
@@ -199,9 +199,14 @@ export class Command<T> implements AsyncIterableIterator<T> {
     this.#state = { code: 'init', stream }
     await this.#send(stream, packets)
     try {
-      extract('1', await stream.recv())
-      extract('2', await stream.recv())
-      const packet = extract(await stream.recv())
+      let packet
+      packet = extract(await stream.recv())
+      if (packet.code === '1') {
+        extract('2', await stream.recv())
+      } else if (packet.code !== '2') {
+        throw new UnexpectedBackendPacket(packet, ['2'])
+      }
+      packet = extract(await stream.recv())
 
       if (packet.code === 'T') {
         this.#state = { code: 'running', stream, fields: packet.data }
@@ -221,6 +226,10 @@ export class Command<T> implements AsyncIterableIterator<T> {
         extract('C', await stream.recv())
         extract('3', await stream.recv())
         return this.#close(extract('Z', await stream.recv()))
+      }
+
+      if (packet.code === 'E') {
+        throw new PostgresError(packet.data)
       }
 
       throw new UnexpectedBackendPacket(packet, ['T', 'n'])
