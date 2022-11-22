@@ -13,6 +13,15 @@
  - [prepared statement](#prepared-statement)
  - [browser](#browser)
 
+## import
+
+This is not production ready. So, to import you need either clone this repo or
+import github raw:
+
+```ts
+import * as pg from 'https://raw.githubusercontent.com/arch-mage/pg/<commit>/mod.ts'
+```
+
 ## single connection
 
 Connect a `Client` to do simple database query.
